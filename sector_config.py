@@ -148,18 +148,16 @@ SECTOR_CONFIGS = {
 
     # ==================================================================
     # 新能源（光伏、风电）— 高波动、强周期
-    # V20: MR降权+RT反转确认，避免左侧反复抄底
     # ==================================================================
     '新能源': {
         'vol_group': 'high',
         'cycle_type': 'cyclical',
-        'description': '景气周期波动大，RT反转确认+VP+MR',
+        'description': '景气周期波动大，MR+VP+突破策略',
         'strategies': {
-            'RT':  {'enabled': True,  'weight': 2.5},    # V20: 新增反转确认（高权重）
-            'MR':  {'enabled': True,  'weight': 1.5},   # V20: 2.0→1.5，降低左侧抄底
-            'VP':  {'enabled': True,  'weight': 1.5},
-            'BK':  {'enabled': True,  'weight': 0.8},   # V20: 1.0→0.8
-            'MOM': {'enabled': True,  'weight': 0.5},   # V20: 0.8→0.5
+            'MR':  {'enabled': True,  'weight': 2.0},
+            'VP':  {'enabled': True,  'weight': 2.0},
+            'BK':  {'enabled': True,  'weight': 1.0},
+            'MOM': {'enabled': True,  'weight': 0.8},
         },
         'rsi_buy': 28,
         'rsi_exit': 80,
@@ -262,18 +260,15 @@ SECTOR_CONFIGS = {
 
     # ==================================================================
     # 化工 — 中波动、强周期
-    # V21: RT成为主导(2.0→2.5), MR继续降权(2.0→1.5)
-    #   CSV: 恒力石化6笔0%胜率-27.5%, 需要更强的RT信号
     # ==================================================================
     '化工': {
         'vol_group': 'medium',
         'cycle_type': 'cyclical',
-        'description': '强周期需反转确认，RT主导',
+        'description': '产品价格周期驱动，VP+MR结合',
         'strategies': {
-            'RT':  {'enabled': True,  'weight': 2.5},    # V21: 2.0→2.5（主导）
-            'MR':  {'enabled': True,  'weight': 1.5},   # V21: 2.0→1.5
+            'MR':  {'enabled': True,  'weight': 2.5},
             'VP':  {'enabled': True,  'weight': 1.5},
-            'MOM': {'enabled': True,  'weight': 0.5},
+            'MOM': {'enabled': True,  'weight': 0.8},
         },
         'rsi_buy': 30,
         'rsi_exit': 78,
@@ -292,29 +287,27 @@ SECTOR_CONFIGS = {
 
     # ==================================================================
     # 公用事业（电力）— 低波动、防御性
-    # V21: MR降权(4.0→2.5), RSI收紧(38→34), 新增RT防左侧抄底
-    #   CSV: 16笔31.2%胜率-9.1%, 中国核电8笔12.5%胜率-19.7%
+    # V20原版: MR绝对主导, 宽松参数
     # ==================================================================
     '公用事业': {
         'vol_group': 'low',
         'cycle_type': 'defensive',
-        'description': '最稳定但需防左侧，MR+RT+DV三驱',
+        'description': '最稳定，超卖必反弹，MR+红利双驱',
         'strategies': {
-            'MR':  {'enabled': True,  'weight': 2.5},    # V21: 4.0→2.5
-            'DV':  {'enabled': True,  'weight': 2.0},    # V21: 1.5→2.0
-            'RT':  {'enabled': True,  'weight': 1.5},    # V21: 新增
+            'MR':  {'enabled': True,  'weight': 4.0},    # 绝对主导
+            'DV':  {'enabled': True,  'weight': 1.5},
             'VP':  {'enabled': True,  'weight': 0.5},
             'MOM': {'enabled': False, 'weight': 0.0},
         },
-        'rsi_buy': 34,           # V21: 38→34
+        'rsi_buy': 38,
         'rsi_exit': 70,
         'rsi_deep_oversold': 25,
         'atr_stop_mult': 1.5,
         'atr_trail_mult': 2.5,
         'stop_loss_cap': 0.07,
-        'position_pct': 0.30,    # V21: 0.35→0.30
-        'time_stop_days': 20,   # V21: 25→20
-        'entry_threshold': 0.30, # V21: 0.25→0.30
+        'position_pct': 0.35,
+        'time_stop_days': 25,
+        'entry_threshold': 0.25,
         'vol_surge_min': 1.0,
         'vp_vol_decline': 0.80,
         'mom_stop_loss': 0.04,

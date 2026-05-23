@@ -149,6 +149,7 @@ class TradeExecutor:
             bk_exit  = exit_signals.get('BK')
             dv_exit  = exit_signals.get('DV')
             rt_exit  = exit_signals.get('RT')
+            wr_exit  = exit_signals.get('WR')
 
             owner_strategy = info.get('strategy', 'MR')
             vote_result = fusion.vote_exit(mr_exit, mom_exit, vp_exit, regime,
@@ -218,10 +219,11 @@ class TradeExecutor:
             bk_sig  = strategy_signals.get('BK')
             dv_sig  = strategy_signals.get('DV')
             rt_sig  = strategy_signals.get('RT')
+            wr_sig  = strategy_signals.get('WR')
 
             # 行业差异化投票（传入行业权重）
             vote_result = self._vote_with_sector_weights(
-                mr_sig, mom_sig, vp_sig, bk_sig, dv_sig, rt_sig, regime, sector
+                mr_sig, mom_sig, vp_sig, bk_sig, dv_sig, rt_sig, wr_sig, regime, sector
             )
 
             if vote_result['action'] == 'BUY':
@@ -231,7 +233,7 @@ class TradeExecutor:
                 best_strat = 'MR'
                 best_score = 0
                 for sig, name in [(mr_sig, 'MR'), (mom_sig, 'MOM'), (vp_sig, 'VP'),
-                                   (bk_sig, 'BK'), (dv_sig, 'DV'), (rt_sig, 'RT')]:
+                                   (bk_sig, 'BK'), (dv_sig, 'DV'), (rt_sig, 'RT'), (wr_sig, 'WR')]:
                     if sig and sig.get('action') == 'BUY':
                         if sig.get('score', 0) > best_score:
                             best_score = sig['score']
@@ -254,12 +256,9 @@ class TradeExecutor:
         candidates.sort(key=lambda x: x['confidence'], reverse=True)
         return candidates
 
-    def _vote_with_sector_weights(self, mr_sig, mom_sig, vp_sig, bk_sig, dv_sig, rt_sig, regime, sector):
+    def _vote_with_sector_weights(self, mr_sig, mom_sig, vp_sig, bk_sig, dv_sig, rt_sig, wr_sig, regime, sector):
         """
-        行业差异化投票融合。
-
-        用 sector_config 中各策略的权重替代 fusion.py 中的固定权重。
-        支持 6 个策略: MR, MOM, VP, BK, DV, RT
+        行业差异化投票融合。支持 7 个策略: MR, MOM, VP, BK, DV, RT, WR
         """
         signals = [
             ('MR',  mr_sig),
@@ -268,6 +267,7 @@ class TradeExecutor:
             ('BK',  bk_sig),
             ('DV',  dv_sig),
             ('RT',  rt_sig),
+            ('WR',  wr_sig),
         ]
 
         buy_votes = 0.0
@@ -291,8 +291,8 @@ class TradeExecutor:
             elif action == 'SELL':
                 sell_votes += weight
 
-        # ---- 决策 (与 fusion.py 逻辑一致，但使用行业权重) ----
-        if buy_votes >= 4.0:
+        # ---- 决策 ----
+        if buy_votes >= 3.0:
             avg_conf = sum(confidences) / len(confidences) if confidences else 0.5
             return {
                 'action': 'BUY',
@@ -301,14 +301,14 @@ class TradeExecutor:
                 'voters': voters,
                 'reason': 'FUSION_强一致[%s]' % '+'.join(voters),
             }
-        elif buy_votes >= 2.0:
+        elif buy_votes >= 1.5:
             avg_conf = sum(confidences) / len(confidences) if confidences else 0.5
             if sell_votes > 0:
                 pos_pct = 0.50
-                reason = 'FUSION_MR主导(有异议)[%s]' % '+'.join(voters)
+                reason = 'FUSION_弱一致(有异议)[%s]' % '+'.join(voters)
             else:
                 pos_pct = 0.70
-                reason = 'FUSION_MR主导[%s]' % '+'.join(voters)
+                reason = 'FUSION_弱一致[%s]' % '+'.join(voters)
             return {
                 'action': 'BUY',
                 'confidence': avg_conf,
@@ -316,14 +316,14 @@ class TradeExecutor:
                 'voters': voters,
                 'reason': reason,
             }
-        elif buy_votes >= 1.5:
+        elif buy_votes >= 1.0:
             avg_conf = sum(confidences) / len(confidences) if confidences else 0.3
             return {
                 'action': 'BUY',
                 'confidence': avg_conf,
-                'position_pct': 0.50,
+                'position_pct': 0.40,
                 'voters': voters,
-                'reason': 'FUSION_弱确认[%s]' % '+'.join(voters),
+                'reason': 'FUSION_单策略[%s]' % '+'.join(voters),
             }
 
         return {

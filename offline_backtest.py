@@ -39,6 +39,7 @@ import strategy_vp
 import strategy_breakout
 import strategy_dividend
 import strategy_reversal
+import strategy_wr
 import fusion
 
 # =============================================================================
@@ -126,6 +127,7 @@ class V19BacktestEngine:
             'BK':  {'wins': 0, 'total': 0, 'pnl': 0.0},
             'DV':  {'wins': 0, 'total': 0, 'pnl': 0.0},
             'RT':  {'wins': 0, 'total': 0, 'pnl': 0.0},
+            'WR':  {'wins': 0, 'total': 0, 'pnl': 0.0},
         }
         # 行业统计
         self.sector_stats = {}
@@ -349,7 +351,7 @@ class V19BacktestEngine:
 
         # ---- 策略分项 ----
         print('  ---- 策略分项 ----')
-        for name in ['MR', 'MOM', 'VP', 'BK', 'DV', 'RT']:
+        for name in ['MR', 'MOM', 'VP', 'BK', 'DV', 'RT', 'WR']:
             ss = self.strategy_stats[name]
             if ss['total'] > 0:
                 wr = ss['wins'] / ss['total'] * 100
