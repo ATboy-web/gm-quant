@@ -1,8 +1,16 @@
 """
-offline_backtest.py - V18 离线回测脚本
+offline_backtest.py - V19.2 离线回测脚本
 
-三策略并行 + 投票融合 + KNN 历史匹配。
-不依赖掘金终端，直接用 history() API 拉数据模拟回测。
+V19.2 改进:
+  1. 新增突破策略(BK)和红利策略(DV)
+  2. 新能源/公用事业参数优化
+  3. 策略工厂支持5策略
+
+V19 改进:
+  1. 行业差异化策略参数
+  2. 策略工厂动态创建
+  3. executor 执行器复用
+  4. 与 GM 终端解耦，纯 Python 回测
 """
 
 import sys
@@ -18,11 +26,14 @@ import config
 import indicators
 import stock_pool
 import screener
+import sector_config
+import executor
 import strategy_mr
 import strategy_momentum
 import strategy_vp
+import strategy_breakout
+import strategy_dividend
 import fusion
-import knn_matcher
 
 # =============================================================================
 # 全局设置
@@ -35,11 +46,12 @@ MARKET_INDEX = config.MARKET_INDEX
 SYMBOL_SECTOR_MAP = stock_pool.get_symbol_sector_map()
 
 print('=' * 60)
-print('  V18 离线回测 — 多策略融合框架')
-print('  策略: 均值回归 + 动量趋势 + 量价背离')
-print('  融合: 投票制 + KNN历史匹配')
+print('  V19.2 离线回测 — 行业差异化多策略融合框架')
+print('  策略: 均值回归 + 动量趋势 + 量价背离 + 突破 + 红利')
+print('  V19.2: 12个行业各自配置策略参数 + 2个新策略')
 print('  股票池: %d 只 / %d 行业' % (len(SYMBOLS), len(stock_pool.get_sector_list())))
 print('=' * 60)
+sector_config.print_summary()
 
 
 # =============================================================================
@@ -78,41 +90,40 @@ def preload_all_data(start, end):
 
 
 # =============================================================================
-# V18 回测引擎
+# V19 回测引擎
 # =============================================================================
 
-class V18BacktestEngine:
+class V19BacktestEngine:
 
-    def __init__(self, data, start_cash=25000, use_knn=False):
+    def __init__(self, data, start_cash=25000):
         self.data = data
         self.cash = float(start_cash)
         self.initial_cash = float(start_cash)
-        self.positions = {}  # {sym: {vol, cost, peak, entry_date, sector, strategy, voters}}
+        self.positions = {}
         self.trades = []
         self.daily_values = []
-        self.use_knn = use_knn
 
-        # KNN 匹配器
-        self.knn = knn_matcher.KNNMatcher() if use_knn else None
+        # V19 执行器
+        self.exec_engine = executor.TradeExecutor()
 
         if MARKET_INDEX in data:
             self.bar_dates = list(data[MARKET_INDEX]['bob'].dt.strftime('%Y-%m-%d'))
 
-        print('[引擎] 交易日数: %d | 初始资金: %.0f | KNN: %s'
-              % (len(self.bar_dates), start_cash, '启用' if use_knn else '关闭'))
+        print('[引擎] 交易日数: %d | 初始资金: %.0f'
+              % (len(self.bar_dates), start_cash))
 
         # 策略统计
         self.strategy_stats = {
             'MR':  {'wins': 0, 'total': 0, 'pnl': 0.0},
             'MOM': {'wins': 0, 'total': 0, 'pnl': 0.0},
             'VP':  {'wins': 0, 'total': 0, 'pnl': 0.0},
+            'BK':  {'wins': 0, 'total': 0, 'pnl': 0.0},
+            'DV':  {'wins': 0, 'total': 0, 'pnl': 0.0},
         }
+        # 行业统计
+        self.sector_stats = {}
 
     def run(self):
-        # ---- KNN 特征库构建 ----
-        if self.use_knn:
-            self.knn.build_from_data(self.data, self.bar_dates)
-
         print('[引擎] 开始回测...')
         for i, date_str in enumerate(self.bar_dates):
             self._daily_bar(date_str, i)
@@ -134,13 +145,74 @@ class V18BacktestEngine:
         regime = self._detect_regime(bar_idx)
         regime_cfg = config.REGIME_PARAMS.get(regime, config.REGIME_PARAMS['range'])
 
-        self._check_exits(date_str, bar_idx, regime_cfg)
+        # 出场检查（使用 executor）
+        pos_info_copy = {sym: dict(pos) for sym, pos in self.positions.items()}
+        data_cache = {}
+        for sym in list(self.positions.keys()) + SYMBOLS:
+            df = self._get_df_slice(sym, bar_idx)
+            if df is not None:
+                data_cache[sym] = df
 
+        sells = self.exec_engine.check_exits(
+            pos_info_copy, data_cache, regime, today_str=date_str
+        )
+
+        for sym, price, vote, info in sells:
+            if sym in self.positions:
+                self._execute_sell(sym, price, vote['reason'], date_str)
+
+        # 行业动量
         sector_momentum = self._calc_sector_momentum(bar_idx)
 
+        # 入场
         max_pos = regime_cfg['max_positions']
+        occupied = set(p.get('sector') for p in self.positions.values())
         if len(self.positions) < max_pos:
-            self._execute_entries(date_str, bar_idx, sector_momentum, regime_cfg)
+            candidates = self.exec_engine.find_buy_candidates(
+                SYMBOLS, occupied, self.positions,
+                data_cache, sector_momentum, regime
+            )
+            self._do_buys(candidates, max_pos, date_str)
+
+    def _do_buys(self, candidates, max_pos, date_str):
+        remaining = max_pos - len(self.positions)
+        if remaining <= 0:
+            return
+
+        taken_sectors = set(p.get('sector') for p in self.positions.values())
+        taken_count = 0
+
+        for c in candidates:
+            if taken_count >= remaining:
+                break
+            sector = c['sector']
+            if sector in taken_sectors:
+                continue
+
+            sym = c['symbol']
+            price = c['price']
+
+            qty = self.exec_engine.calc_position_size(
+                c, self.cash, remaining - taken_count
+            )
+            if qty < 100:
+                continue
+
+            self.cash -= price * qty
+            self.positions[sym] = {
+                'vol': qty, 'cost': price, 'peak': price,
+                'entry_date': date_str, 'sector': sector,
+                'strategy': c['best_strategy'],
+                'voters': c.get('voters', []),
+                'confidence': c['confidence'],
+            }
+            taken_sectors.add(sector)
+            taken_count += 1
+
+            rsi_str = ' RSI=%.0f' % c['rsi'] if c.get('rsi') else ''
+            print('[买入] %s | %s | %s | 策略:%s | %.2f×%d%s'
+                  % (date_str, sym, c['reason'],
+                     c['best_strategy'], price, qty, rsi_str))
 
     def _get_df_slice(self, symbol, bar_idx):
         if symbol not in self.data:
@@ -161,158 +233,10 @@ class V18BacktestEngine:
             bear_threshold=config.REGIME_BEAR_THRESHOLD
         )
 
-    # =====================================================================
-    # 入场: 三策略打分 + 投票融合
-    # =====================================================================
-
-    def _execute_entries(self, date_str, bar_idx, sector_momentum, regime_cfg):
-        occupied_sectors = set(p.get('sector') for p in self.positions.values())
-        remaining = regime_cfg['max_positions'] - len(self.positions)
-        if remaining <= 0:
+    def _execute_sell(self, sym, price, reason, date_str):
+        if sym not in self.positions:
             return
-
-        regime = self._detect_regime(bar_idx)
-        buy_candidates = []
-
-        for sym in SYMBOLS:
-            if sym in self.positions:
-                continue
-            sector = SYMBOL_SECTOR_MAP.get(sym, '未知')
-            if sector in occupied_sectors:
-                continue
-
-            df = self._get_df_slice(sym, bar_idx)
-            if df is None:
-                continue
-
-            # 三个策略打分
-            mr_sig  = strategy_mr.get_signal(df, sector, sector_momentum, regime) \
-                      if config.STRATEGY_MR_ENABLED else None
-            mom_sig = strategy_momentum.get_signal(df, sector, sector_momentum, regime) \
-                      if config.STRATEGY_MOM_ENABLED else None
-            vp_sig  = strategy_vp.get_signal(df, sector, sector_momentum, regime) \
-                      if config.STRATEGY_VP_ENABLED else None
-
-            # 融合投票
-            vote_result = fusion.vote_entry(mr_sig, mom_sig, vp_sig, regime)
-
-            # KNN 增强（如果启用且投票分歧）
-            if self.use_knn and vote_result['position_pct'] < 0.6:
-                knn_rec = self.knn.recommend_strategy(df)
-                if knn_rec['recommend'] != 'voting' and knn_rec['confidence'] > 0.4:
-                    # KNN 推荐某个策略 → 给该策略的信号加权
-                    # 简化: 如果 KNN 说应该用某个策略，提高该策略在投票中的权重
-                    pass  # 后续实现 KNN 加权投票
-
-            if vote_result['action'] == 'BUY':
-                cur_price = float(df['close'].values[-1])
-                # 确定主导策略
-                highest_score = 0
-                best_strategy = 'MR'
-                for sig, name in [(mr_sig, 'MR'), (mom_sig, 'MOM'), (vp_sig, 'VP')]:
-                    if sig and sig.get('action') == 'BUY':
-                        if sig.get('score', 0) > highest_score:
-                            highest_score = sig['score']
-                            best_strategy = name
-
-                buy_candidates.append({
-                    'symbol': sym, 'sector': sector, 'price': cur_price,
-                    'confidence': vote_result['confidence'],
-                    'position_pct': vote_result['position_pct'],
-                    'reason': vote_result['reason'],
-                    'best_strategy': best_strategy,
-                    'rsi': mr_sig['rsi'] if mr_sig and 'rsi' in mr_sig else 0,
-                })
-
-        buy_candidates.sort(key=lambda x: x['confidence'], reverse=True)
-
-        taken_sectors = set(occupied_sectors)
-        taken_count = 0
-
-        for c in buy_candidates:
-            if taken_count >= remaining:
-                break
-            if c['sector'] in taken_sectors:
-                continue
-
-            sym    = c['symbol']
-            sector = c['sector']
-            price  = c['price']
-
-            vol_group = stock_pool.get_sector_volatility_group(sector)
-            if vol_group == 'high':
-                base_pct = config.POSITION_PCT * config.VOL_ADJ_HIGH
-            elif vol_group == 'low':
-                base_pct = config.POSITION_PCT * config.VOL_ADJ_LOW
-            else:
-                base_pct = config.POSITION_PCT
-
-            pos_pct = base_pct * c['position_pct']
-
-            allocated = self.cash * pos_pct / max(remaining - taken_count, 1)
-            if allocated < price * 100:
-                continue
-
-            qty = int(allocated / (price * 100)) * 100
-            if qty < 100:
-                continue
-
-            self.cash -= price * qty
-            self.positions[sym] = {
-                'vol': qty, 'cost': price, 'peak': price,
-                'entry_date': date_str, 'sector': sector,
-                'strategy': c['best_strategy'],
-                'voters': c.get('voters', []),
-                'confidence': c['confidence'],
-            }
-            taken_sectors.add(sector)
-            taken_count += 1
-
-            print('[买入] %s | %s(%s) | %s | 策略:%s | %.2f×%d | RSI=%.0f'
-                  % (date_str, sector, vol_group, c['reason'],
-                     c['best_strategy'], price, qty, c['rsi']))
-
-    # =====================================================================
-    # 出场: 各策略独立检查 + 融合投票
-    # =====================================================================
-
-    def _check_exits(self, date_str, bar_idx, regime_cfg):
-        regime = self._detect_regime(bar_idx)
-
-        for sym in list(self.positions.keys()):
-            pos = self.positions[sym]
-            df = self._get_df_slice(sym, bar_idx)
-            if df is None:
-                continue
-
-            closes = df['close'].values
-            highs  = df['high'].values
-            lows   = df['low'].values
-            if len(closes) < 2:
-                continue
-
-            cur_price = float(closes[-1])
-            if cur_price > pos['peak']:
-                pos['peak'] = cur_price
-
-            # 三个策略各自检查出场
-            mr_exit  = strategy_mr.check_exit(df, pos, regime, today_str=date_str) \
-                       if config.STRATEGY_MR_ENABLED else None
-            mom_exit = strategy_momentum.check_exit(df, pos, regime) \
-                       if config.STRATEGY_MOM_ENABLED else None
-            vp_exit  = strategy_vp.check_exit(df, pos, regime, today_str=date_str) \
-                       if config.STRATEGY_VP_ENABLED else None
-
-            # 融合投票（传入归属策略）
-            owner_strategy = pos.get('strategy', 'MR')
-            vote_result = fusion.vote_exit(mr_exit, mom_exit, vp_exit, regime,
-                                           owner_strategy=owner_strategy)
-
-            if vote_result['action'] == 'SELL':
-                self._execute_sell(sym, cur_price, vote_result['reason'],
-                                   pos, date_str)
-
-    def _execute_sell(self, sym, price, reason, pos, date_str):
+        pos = self.positions[sym]
         vol = pos['vol']
         pnl_pct = (price - pos['cost']) / pos['cost'] * 100
         sector = pos.get('sector', '未知')
@@ -326,6 +250,14 @@ class V18BacktestEngine:
             'reason': reason, 'sector': sector, 'strategy': strat,
         })
 
+        # 行业统计
+        if sector not in self.sector_stats:
+            self.sector_stats[sector] = {'wins': 0, 'total': 0, 'pnl': 0.0}
+        self.sector_stats[sector]['total'] += 1
+        self.sector_stats[sector]['pnl'] += pnl_pct
+        if pnl_pct > 0:
+            self.sector_stats[sector]['wins'] += 1
+
         del self.positions[sym]
 
         # 策略统计
@@ -337,10 +269,6 @@ class V18BacktestEngine:
 
         print('[卖出] %s | %s | %s | 价%.2f | %+.2f%% | %s'
               % (date_str, sym, reason, price, pnl_pct, strat))
-
-    # =====================================================================
-    # 辅助方法
-    # =====================================================================
 
     def _calc_sector_momentum(self, bar_idx):
         momentum = {}
@@ -395,27 +323,36 @@ class V18BacktestEngine:
 
         print()
         print('=' * 60)
-        print('  V18 回测结果摘要')
+        print('  V19.2 行业差异化回测结果摘要')
         print('=' * 60)
         print('  初始资金:   %.0f' % initial)
         print('  最终净值:   %.0f' % final_value)
         print('  总收益率:   %+.2f%%' % total_return)
         print('  最大回撤:   %.2f%%' % max_dd)
-        print('  交易次数:   %d (买入%d 卖出%d)'
-              % (len(self.trades),
-                 sum(1 for t in self.trades if t['side'] == 'BUY'),
-                 len(sell_trades)))
+        print('  交易次数:   %d (卖出%d)' % (len(self.trades), len(sell_trades)))
         print('  胜率:       %.1f%% (%d/%d)'
               % (win_rate, len(win_trades), len(sell_trades)))
         print('  平均盈亏:   %+.2f%%' %
               (np.mean([t['pnl_pct'] for t in sell_trades]) if sell_trades else 0))
+
+        # ---- 策略分项 ----
         print('  ---- 策略分项 ----')
-        for name in ['MR', 'MOM', 'VP']:
+        for name in ['MR', 'MOM', 'VP', 'BK', 'DV']:
             ss = self.strategy_stats[name]
             if ss['total'] > 0:
                 wr = ss['wins'] / ss['total'] * 100
                 print('  %s: 交易%d 胜率%.1f%% 累计盈亏%+.1f%%'
                       % (name, ss['total'], wr, ss['pnl']))
+
+        # ---- 行业分项 ----
+        print('  ---- 行业分项 ----')
+        for sector in sorted(self.sector_stats.keys()):
+            ss = self.sector_stats[sector]
+            if ss['total'] > 0:
+                wr = ss['wins'] / ss['total'] * 100
+                print('  %-6s: 交易%d 胜率%.1f%% 累计%+.1f%%'
+                      % (sector, ss['total'], wr, ss['pnl']))
+
         print('=' * 60)
 
         # 最近 10 笔交易
@@ -436,9 +373,6 @@ if __name__ == '__main__':
     start_date = config.BACKTEST_START[:10]
     end_date   = config.BACKTEST_END[:10]
 
-    print('[KNN] 模式: %s' % ('启用' if config.FUSION_MODE == 'knn' else '关闭'))
-    print()
-
     all_data = preload_all_data(start_date, end_date)
 
     if MARKET_INDEX not in all_data:
@@ -449,7 +383,5 @@ if __name__ == '__main__':
         print('[错误] 有效股票数据不足，退出')
         sys.exit(1)
 
-    use_knn = (config.FUSION_MODE == 'knn')
-    engine = V18BacktestEngine(all_data, start_cash=config.BACKTEST_CASH,
-                               use_knn=use_knn)
+    engine = V19BacktestEngine(all_data, start_cash=config.BACKTEST_CASH)
     engine.run()

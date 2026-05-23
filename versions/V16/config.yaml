@@ -1,4 +1,0 @@
-﻿backtest:
-  start_time: "2024-01-01 09:00:00"
-  end_time: "2026-05-22 15:00:00"
-  initial_cash: 25000

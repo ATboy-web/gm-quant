@@ -202,7 +202,7 @@ def check_exit(df, pos_info, regime='range', context=None, today_str=None):
     # 2. ATR 止损
     stop_mult = regime_cfg.get('atr_stop_mult', config.ATR_STOP_MULT)
     stop_loss_pct = min(atr / cur_price * stop_mult, config.STOP_LOSS_CAP)
-    stop_loss_pct = max(stop_loss_pct, 0.03)
+    stop_loss_pct = max(stop_loss_pct, 0.04)  # V19.1: 3%→4%，避免正常波动触发
     if pnl <= -stop_loss_pct:
         return {
             'action': 'SELL',
@@ -221,7 +221,7 @@ def check_exit(df, pos_info, regime='range', context=None, today_str=None):
 
     # 4. 时间止损
     days_held = _count_days(entry_date, context, today_str)
-    if days_held >= config.TIME_STOP_DAYS and pnl < 0.02:
+    if days_held >= config.TIME_STOP_DAYS and pnl < 0.03:  # V19.1: 2%→3%
         return {
             'action': 'SELL',
             'confidence': 0.7,

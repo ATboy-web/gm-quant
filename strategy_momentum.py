@@ -192,12 +192,28 @@ def check_exit(df, pos_info, regime='range', context=None):
                 'reason': 'MOM_死叉(MA20<MA60)',
             }
 
-    # 2. 跌破 MA20
+    # 2. 跌破 MA20（V19: 需连续2天跌破才触发，避免单日噪音）
     if cur_price < ma20:
+        # 检查前一天是否也跌破
+        prev_below_ma20 = False
+        if len(closes) >= 2:
+            prev_price = float(closes[-2])
+            prev_ma20_check = indicators.calc_sma(closes[:-1], MOM_MA_FAST)
+            if prev_ma20_check is not None and prev_price < prev_ma20_check:
+                prev_below_ma20 = True
+
+        if prev_below_ma20:
+            # 连续2天跌破 → 确认趋势转弱
+            return {
+                'action': 'SELL',
+                'confidence': 0.9,
+                'reason': 'MOM_连续跌破MA20(%.2f<%.2f)' % (cur_price, ma20),
+            }
+        # 仅1天跌破 → 降低置信度，需要融合投票决定
         return {
             'action': 'SELL',
-            'confidence': 0.9,
-            'reason': 'MOM_跌破MA20(%.2f<%.2f)' % (cur_price, ma20),
+            'confidence': 0.5,   # V19: 降低置信度，不再是铁板出场
+            'reason': 'MOM_短暂破MA20(%.2f<%.2f)' % (cur_price, ma20),
         }
 
     # 3. 固定止损

@@ -1,0 +1,303 @@
+"""
+executor.py - V19 交易执行器
+
+从 main.py 抽离入场/出场核心逻辑，使主程序简洁。
+所有交易决策逻辑集中在此，main.py 只负责初始化和回调。
+
+核心流程:
+  1. 检查出场 → 多策略投票
+  2. 行业动量计算
+  3. 多策略选股 → 行业差异化策略 → 投票融合
+  4. 仓位管理 → 行业差异化仓位
+"""
+
+import config
+import indicators
+import stock_pool
+import sector_config
+import strategy_factory
+import fusion
+
+
+class TradeExecutor:
+    """
+    交易执行器 — 封装入场/出场全部逻辑。
+    """
+
+    def __init__(self):
+        self.factory = strategy_factory.StrategyFactory()
+        # 缓存: {sector: [strategy instances]}，随 regime 更新
+        self._strategy_cache = {}
+        self._cache_regime = None
+
+    def _get_strategies(self, sector, regime):
+        """获取行业策略实例（带缓存）。"""
+        if regime != self._cache_regime:
+            self._strategy_cache.clear()
+            self._cache_regime = regime
+        if sector not in self._strategy_cache:
+            self._strategy_cache[sector] = self.factory.create_for_sector(sector, regime)
+        return self._strategy_cache[sector]
+
+    # ==================================================================
+    # 出场检查
+    # ==================================================================
+
+    def check_exits(self, pos_info_dict, data_cache, regime, context=None, today_str=''):
+        """
+        检查所有持仓是否需要出场。
+
+        Args:
+            pos_info_dict:  {symbol: {cost, peak, sector, strategy, ...}}
+            data_cache:     {symbol: DataFrame}
+            regime:         市场状态
+            context:        GM上下文 (可选)
+            today_str:      当前日期
+
+        Returns:
+            list of (symbol, sell_info) — 需要卖出的股票列表
+        """
+        sells = []
+
+        for sym in list(pos_info_dict.keys()):
+            info = pos_info_dict[sym]
+            df = data_cache.get(sym)
+            if df is None:
+                continue
+
+            closes = df['close'].values
+            if len(closes) < 2:
+                continue
+
+            cur_price = float(closes[-1])
+            if cur_price > info.get('peak', cur_price):
+                info['peak'] = cur_price
+
+            sector = info.get('sector', '未知')
+            sector_cfg = sector_config.get_sector_config(sector, regime)
+            strategies = self._get_strategies(sector, regime)
+
+            # 各策略检查出场
+            exit_signals = {}
+            for strat in strategies:
+                sig = strat.check_exit(df, info, regime, context,
+                                       sector_cfg=sector_cfg,
+                                       today_str=today_str)
+                if sig is not None:
+                    exit_signals[strat.name] = sig
+
+            # 构造融合投票所需参数
+            mr_exit  = exit_signals.get('MR')
+            mom_exit = exit_signals.get('MOM')
+            vp_exit  = exit_signals.get('VP')
+            bk_exit  = exit_signals.get('BK')
+            dv_exit  = exit_signals.get('DV')
+
+            owner_strategy = info.get('strategy', 'MR')
+            vote_result = fusion.vote_exit(mr_exit, mom_exit, vp_exit, regime,
+                                           owner_strategy=owner_strategy)
+
+            if vote_result['action'] == 'SELL':
+                sells.append((sym, cur_price, vote_result, info))
+
+        return sells
+
+    # ==================================================================
+    # 入场选股
+    # ==================================================================
+
+    def find_buy_candidates(self, symbols, occupied_sectors, pos_info_dict,
+                            data_cache, sector_momentum, regime):
+        """
+        扫描所有候选股，使用行业差异化策略投票选股。
+
+        Args:
+            symbols:          全部候选股票代码
+            occupied_sectors: 已占用行业集合
+            pos_info_dict:    当前持仓
+            data_cache:       数据缓存
+            sector_momentum:  行业动量
+            regime:           市场状态
+
+        Returns:
+            list of buy candidate dicts, sorted by confidence desc
+        """
+        symbol_sector = stock_pool.get_symbol_sector_map()
+        candidates = []
+
+        for sym in symbols:
+            if sym in pos_info_dict:
+                continue
+
+            sector = symbol_sector.get(sym, '未知')
+            if sector in occupied_sectors:
+                continue
+
+            df = data_cache.get(sym)
+            if df is None:
+                continue
+
+            sector_cfg = sector_config.get_sector_config(sector, regime)
+            strategies = self._get_strategies(sector, regime)
+
+            if not strategies:
+                continue
+
+            # 各策略打分
+            strategy_signals = {}
+            for strat in strategies:
+                sig = strat.get_signal(df, sector, sector_momentum, regime,
+                                       sector_cfg=sector_cfg)
+                if sig is not None:
+                    strategy_signals[strat.name] = sig
+
+            mr_sig  = strategy_signals.get('MR')
+            mom_sig = strategy_signals.get('MOM')
+            vp_sig  = strategy_signals.get('VP')
+            bk_sig  = strategy_signals.get('BK')
+            dv_sig  = strategy_signals.get('DV')
+
+            # 行业差异化投票（传入行业权重）
+            vote_result = self._vote_with_sector_weights(
+                mr_sig, mom_sig, vp_sig, bk_sig, dv_sig, regime, sector
+            )
+
+            if vote_result['action'] == 'BUY':
+                cur_price = float(df['close'].values[-1])
+
+                # 找出主导策略
+                best_strat = 'MR'
+                best_score = 0
+                for sig, name in [(mr_sig, 'MR'), (mom_sig, 'MOM'), (vp_sig, 'VP'),
+                                   (bk_sig, 'BK'), (dv_sig, 'DV')]:
+                    if sig and sig.get('action') == 'BUY':
+                        if sig.get('score', 0) > best_score:
+                            best_score = sig['score']
+                            best_strat = name
+
+                rsi_val = mr_sig.get('rsi', 0) if mr_sig and 'rsi' in mr_sig else 0
+
+                candidates.append({
+                    'symbol': sym,
+                    'sector': sector,
+                    'price': cur_price,
+                    'confidence': vote_result['confidence'],
+                    'position_pct': vote_result['position_pct'],
+                    'voters': vote_result['voters'],
+                    'reason': vote_result['reason'],
+                    'best_strategy': best_strat,
+                    'rsi': rsi_val,
+                })
+
+        candidates.sort(key=lambda x: x['confidence'], reverse=True)
+        return candidates
+
+    def _vote_with_sector_weights(self, mr_sig, mom_sig, vp_sig, bk_sig, dv_sig, regime, sector):
+        """
+        行业差异化投票融合。
+
+        用 sector_config 中各策略的权重替代 fusion.py 中的固定权重。
+        支持 5 个策略: MR, MOM, VP, BK, DV
+        """
+        signals = [
+            ('MR',  mr_sig),
+            ('MOM', mom_sig),
+            ('VP',  vp_sig),
+            ('BK',  bk_sig),
+            ('DV',  dv_sig),
+        ]
+
+        buy_votes = 0.0
+        sell_votes = 0.0
+        voters = []
+        confidences = []
+
+        for name, sig in signals:
+            if sig is None:
+                continue
+            action = sig.get('action', 'HOLD')
+            conf = sig.get('confidence', 0.0)
+
+            # 从 sector_config 获取该行业下该策略的权重
+            weight = sector_config.get_strategy_weight(sector, name, regime)
+
+            if action == 'BUY':
+                buy_votes += weight
+                voters.append(name)
+                confidences.append(conf)
+            elif action == 'SELL':
+                sell_votes += weight
+
+        # ---- 决策 (与 fusion.py 逻辑一致，但使用行业权重) ----
+        if buy_votes >= 4.0:
+            avg_conf = sum(confidences) / len(confidences) if confidences else 0.5
+            return {
+                'action': 'BUY',
+                'confidence': avg_conf,
+                'position_pct': 1.0,
+                'voters': voters,
+                'reason': 'FUSION_强一致[%s]' % '+'.join(voters),
+            }
+        elif buy_votes >= 2.0:
+            avg_conf = sum(confidences) / len(confidences) if confidences else 0.5
+            if sell_votes > 0:
+                pos_pct = 0.50
+                reason = 'FUSION_MR主导(有异议)[%s]' % '+'.join(voters)
+            else:
+                pos_pct = 0.70
+                reason = 'FUSION_MR主导[%s]' % '+'.join(voters)
+            return {
+                'action': 'BUY',
+                'confidence': avg_conf,
+                'position_pct': pos_pct,
+                'voters': voters,
+                'reason': reason,
+            }
+        elif buy_votes >= 1.5:
+            avg_conf = sum(confidences) / len(confidences) if confidences else 0.3
+            return {
+                'action': 'BUY',
+                'confidence': avg_conf,
+                'position_pct': 0.50,
+                'voters': voters,
+                'reason': 'FUSION_弱确认[%s]' % '+'.join(voters),
+            }
+
+        return {
+            'action': 'HOLD',
+            'confidence': 0.0,
+            'position_pct': 0.0,
+            'voters': [],
+            'reason': 'FUSION_票数不足(%.1f)' % buy_votes,
+        }
+
+    # ==================================================================
+    # 仓位计算
+    # ==================================================================
+
+    def calc_position_size(self, candidate, available_cash, remaining_slots):
+        """
+        根据行业配置计算买入数量。
+
+        Args:
+            candidate:      买入候选 dict
+            available_cash: 可用现金
+            remaining_slots: 剩余可开仓数
+
+        Returns:
+            int: 买入数量（股），0 表示不够
+        """
+        sector = candidate['sector']
+        price = candidate['price']
+        sector_cfg = sector_config.get_sector_config(sector)
+
+        # 行业基础仓位 × 融合仓位比例
+        base_pct = sector_cfg.get('position_pct', config.POSITION_PCT)
+        pos_pct = base_pct * candidate['position_pct']
+
+        allocated = available_cash * pos_pct / max(remaining_slots, 1)
+        if allocated < price * 100:
+            return 0
+
+        qty = int(allocated / (price * 100)) * 100
+        return qty if qty >= 100 else 0
