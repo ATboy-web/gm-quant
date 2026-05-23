@@ -12,6 +12,7 @@ executor.py - V19 交易执行器
 """
 
 import config
+import random
 import indicators
 import stock_pool
 import sector_config
@@ -165,39 +166,34 @@ class TradeExecutor:
     # ==================================================================
 
     def find_buy_candidates(self, symbols, occupied_sectors, pos_info_dict,
-                            data_cache, sector_momentum, regime):
+                            data_cache, sector_momentum, regime, max_needed=999):
         """
-        扫描所有候选股，使用行业差异化策略投票选股。
-
-        Args:
-            symbols:          全部候选股票代码
-            occupied_sectors: 已占用行业集合
-            pos_info_dict:    当前持仓
-            data_cache:       数据缓存
-            sector_momentum:  行业动量
-            regime:           市场状态
-
-        Returns:
-            list of buy candidate dicts, sorted by confidence desc
+        扫描候选股。仅保留快速价格过滤，不限制候选数保证选股质量。
         """
         symbol_sector = stock_pool.get_symbol_sector_map()
         candidates = []
 
         for sym in symbols:
+            if len(candidates) >= max_needed:
+                break
+
             if sym in pos_info_dict:
                 continue
 
-            # V19.2: 冷却期检查
             if sym in self._sell_history:
                 continue
 
             sector = symbol_sector.get(sym, '未知')
-            # V20: 取消行业排他, 允许同行业多持仓
-            # if sector in occupied_sectors:
-            #     continue
 
             df = data_cache.get(sym)
             if df is None:
+                continue
+            closes = df['close'].values
+            if len(closes) < 3:
+                continue
+            cur_price = float(closes[-1])
+            # 快速价格过滤
+            if cur_price < config.PRICE_MIN or cur_price > config.PRICE_MAX:
                 continue
 
             sector_cfg = sector_config.get_sector_config(sector, regime)
