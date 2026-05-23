@@ -88,8 +88,7 @@ def init(context):
                               'VP':  {'wins': 0, 'total': 0},
                               'BK':  {'wins': 0, 'total': 0},
                               'DV':  {'wins': 0, 'total': 0},
-                              'RT':  {'wins': 0, 'total': 0},
-                              'WR':  {'wins': 0, 'total': 0}}
+                              'RT':  {'wins': 0, 'total': 0}}
 
     all_symbols = list(SYMBOLS) + [MARKET_INDEX]
     subscribe(symbols=all_symbols, frequency='1d', count=config.DATA_COUNT)
@@ -316,7 +315,7 @@ def on_backtest_finished(context, indicator):
     print('  累计盈亏: %+.2f%%' % s['total_pnl'])
     print('  剩余持仓: %d 只' % pos_count)
     print('  ---- 策略分项 ----')
-    for name in ['MR', 'MOM', 'VP', 'BK', 'DV', 'RT', 'WR']:
+    for name in ['MR', 'MOM', 'VP', 'BK', 'DV', 'RT']:
         ss = context.strategy_stats[name]
         if ss['total'] > 0:
             print('  %s: 交易%d 胜率%.1f%%' %

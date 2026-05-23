@@ -1,9 +1,5 @@
 ﻿"""
-strategy_factory.py - V22 策略工厂
-
-V22: 新增WR策略(Williams %R超卖反弹), 7策略体系
-V20: 新增RT策略(反转确认)
-V19.2: 新增BK(突破)和DV(红利)
+strategy_factory.py - V23 策略工厂 (6策略: MR/MOM/VP/BK/DV/RT)
 """
 
 import strategy_mr
@@ -12,7 +8,6 @@ import strategy_vp
 import strategy_breakout
 import strategy_dividend
 import strategy_reversal
-import strategy_wr
 import sector_config
 
 
@@ -29,7 +24,6 @@ class StrategyFactory:
         'BK':  '_create_bk',
         'DV':  '_create_dv',
         'RT':  '_create_rt',
-        'WR':  '_create_wr',
     }
 
     def create_for_sector(self, sector, regime='range'):
@@ -103,10 +97,6 @@ class StrategyFactory:
     def _create_rt(self, sector_cfg, weight):
         """创建反转确认策略实例。"""
         return RTStrategyWrapper(weight, sector_cfg)
-
-    def _create_wr(self, sector_cfg, weight):
-        """创建Williams %R策略实例。"""
-        return WRStrategyWrapper(weight, sector_cfg)
 
 
 # =============================================================================
@@ -323,21 +313,3 @@ class RTStrategyWrapper:
     def check_exit(self, df, pos_info, regime='range', context=None, sector_cfg=None, today_str=None):
         import strategy_reversal as srt
         return srt.check_exit(df, pos_info, regime, context, today_str=today_str)
-
-
-class WRStrategyWrapper:
-    """Williams %R策略包装器。"""
-    name = 'WR'
-    full_name = '%R超卖'
-
-    def __init__(self, weight, sector_cfg):
-        self.weight = weight
-        self.sector_cfg = sector_cfg
-
-    def get_signal(self, df, sector=None, sector_momentum=None, regime='range', sector_cfg=None):
-        import strategy_wr as swr
-        return swr.get_signal(df, sector, sector_momentum, regime)
-
-    def check_exit(self, df, pos_info, regime='range', context=None, sector_cfg=None, today_str=None):
-        import strategy_wr as swr
-        return swr.check_exit(df, pos_info, regime, context, today_str=today_str)
