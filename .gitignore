@@ -1,0 +1,32 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# GM 运行时/缓存
+*.log
+*.csv
+*.pickle
+*.pkl
+data/
+output/
+.goldminer/
+
+# 环境
+venv/
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
