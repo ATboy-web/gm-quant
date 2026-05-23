@@ -30,7 +30,7 @@ class TradeExecutor:
         self._strategy_cache = {}
         self._cache_regime = None
         # V19.2: 冷却期 — 卖出后N天内不再买入同一股票
-        self.cooldown_days = 3
+        self.cooldown_days = 1   # 只冷却1天
         self._sell_history = {}  # {symbol: sell_date_str}
         # V22: 连亏熔断
         self._loss_streak = 0
@@ -192,8 +192,9 @@ class TradeExecutor:
                 continue
 
             sector = symbol_sector.get(sym, '未知')
-            if sector in occupied_sectors:
-                continue
+            # V20: 取消行业排他, 允许同行业多持仓
+            # if sector in occupied_sectors:
+            #     continue
 
             df = data_cache.get(sym)
             if df is None:
@@ -292,38 +293,26 @@ class TradeExecutor:
                 sell_votes += weight
 
         # ---- 决策 ----
-        if buy_votes >= 3.0:
+        if buy_votes >= 2.0:
             avg_conf = sum(confidences) / len(confidences) if confidences else 0.5
             return {
-                'action': 'BUY',
-                'confidence': avg_conf,
-                'position_pct': 1.0,
-                'voters': voters,
-                'reason': 'FUSION_强一致[%s]' % '+'.join(voters),
-            }
-        elif buy_votes >= 1.5:
-            avg_conf = sum(confidences) / len(confidences) if confidences else 0.5
-            if sell_votes > 0:
-                pos_pct = 0.50
-                reason = 'FUSION_弱一致(有异议)[%s]' % '+'.join(voters)
-            else:
-                pos_pct = 0.70
-                reason = 'FUSION_弱一致[%s]' % '+'.join(voters)
-            return {
-                'action': 'BUY',
-                'confidence': avg_conf,
-                'position_pct': pos_pct,
-                'voters': voters,
-                'reason': reason,
+                'action': 'BUY', 'confidence': avg_conf,
+                'position_pct': 1.0, 'voters': voters,
+                'reason': 'FUSION[%s]' % '+'.join(voters),
             }
         elif buy_votes >= 1.0:
+            avg_conf = sum(confidences) / len(confidences) if confidences else 0.5
+            return {
+                'action': 'BUY', 'confidence': avg_conf,
+                'position_pct': 0.70, 'voters': voters,
+                'reason': 'FUSION_弱[%s]' % '+'.join(voters),
+            }
+        elif buy_votes >= 0.5:
             avg_conf = sum(confidences) / len(confidences) if confidences else 0.3
             return {
-                'action': 'BUY',
-                'confidence': avg_conf,
-                'position_pct': 0.40,
-                'voters': voters,
-                'reason': 'FUSION_单策略[%s]' % '+'.join(voters),
+                'action': 'BUY', 'confidence': avg_conf,
+                'position_pct': 0.40, 'voters': voters,
+                'reason': 'FUSION_单[%s]' % '+'.join(voters),
             }
 
         return {
