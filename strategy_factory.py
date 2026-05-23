@@ -1,4 +1,4 @@
-"""
+﻿"""
 strategy_factory.py - V22 策略工厂
 
 V22: 新增WR策略(Williams %R超卖反弹), 7策略体系

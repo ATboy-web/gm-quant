@@ -1,4 +1,4 @@
-"""
+﻿"""
 executor.py - V19 交易执行器
 
 从 main.py 抽离入场/出场核心逻辑，使主程序简洁。
@@ -16,6 +16,7 @@ import random
 import indicators
 import stock_pool
 import sector_config
+import market_sentiment
 import strategy_factory
 import fusion
 
@@ -201,6 +202,15 @@ class TradeExecutor:
 
             if not strategies:
                 continue
+
+            # === V23: 市场情绪过滤 - 情绪先行 ===
+            if hasattr(self, '_sentiment') and self._sentiment:
+                if market_sentiment.get_sector_freeze(sector, self._sentiment):
+                    continue
+                bias = market_sentiment.get_sector_bias(sector, self._sentiment)
+                if bias < 0.9:
+                    sector_cfg = dict(sector_cfg)
+                    sector_cfg['entry_threshold'] = sector_cfg.get('entry_threshold', 0.35) * (1.5 - bias * 0.5)
 
             # 各策略打分
             strategy_signals = {}
