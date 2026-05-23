@@ -12,7 +12,6 @@ executor.py - V19 交易执行器
 """
 
 import config
-import random
 import indicators
 import stock_pool
 import sector_config
