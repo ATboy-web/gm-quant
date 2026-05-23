@@ -78,7 +78,7 @@ VOL_SURGE_MIN = 1.2
 # =============================================================================
 # 九、仓位管理
 # =============================================================================
-MAX_POSITIONS  = 6
+MAX_POSITIONS  = 4
 POSITION_PCT   = 0.25
 
 VOL_ADJ_HIGH  = 0.7
@@ -109,13 +109,13 @@ REGIME_BEAR_THRESHOLD = -0.08
 
 REGIME_PARAMS = {
     'bull': {
-        'max_positions': 6,
+        'max_positions': 4,
         'rsi_buy': 38,
         'entry_threshold': 0.22,
         'atr_stop_mult': 1.8,
     },
     'range': {
-        'max_positions': 6,
+        'max_positions': 4,
         'rsi_buy': 34,
         'entry_threshold': 0.25,
         'atr_stop_mult': 1.5,
