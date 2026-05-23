@@ -154,7 +154,7 @@ def get_signal(df, sector=None, sector_momentum=None, regime='range'):
 
     score = min(1.0, score)
 
-    if score >= 0.50:
+    if score >= 0.60:
         reason_parts = ['低位']
         if ret_20d < -0.05:
             reason_parts.append('回调%.1f%%' % (ret_20d * 100))

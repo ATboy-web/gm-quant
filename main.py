@@ -1,5 +1,10 @@
 """
-main.py - V19.2 行业差异化多策略融合框架
+main.py - V20 六策略行业差异化融合框架
+
+V20 改进:
+  1. 新增反转确认策略(RT)
+  2. 6策略体系: MR + MOM + VP + BK + DV + RT
+  3. 化工/新能源/煤炭行业针对性优化（RT反转确认替代MR左侧抄底）
 
 V19.2 改进:
   1. 新增突破策略(BK)和红利策略(DV)
@@ -22,6 +27,7 @@ V19 核心改进:
   strategy_vp.py   ← 量价背离策略
   strategy_breakout.py ← 突破策略 (V19.2)
   strategy_dividend.py ← 红利策略 (V19.2)
+  strategy_reversal.py ← 反转确认策略 (V20)
   fusion.py        ← 投票融合引擎
   config.py        ← 全局参数
   indicators.py    ← 技术指标
@@ -58,9 +64,9 @@ MARKET_INDEX  = config.MARKET_INDEX
 exec_engine = executor.TradeExecutor()
 
 print('=' * 60)
-print('  V19.2 行业差异化多策略融合框架')
-print('  策略: 均值回归 + 动量趋势 + 量价背离 + 突破 + 红利')
-print('  V19.2: 12个行业各自配置策略参数 + 2个新策略')
+print('  V21 六策略行业差异化融合框架')
+print('  策略: MR + MOM + VP + BK + DV + RT(反转确认)')
+print('  V21: GM主程序同步 + CSV分析针对性优化')
 print('  股票池: %d 只 / %d 行业'
       % (len(SYMBOLS), len(stock_pool.get_sector_list())))
 print('=' * 60)
@@ -77,11 +83,12 @@ def init(context):
     context.data_cache = {}
     context.regime     = 'range'
     context.stats      = {'total_trades': 0, 'wins': 0, 'losses': 0, 'total_pnl': 0.0}
-    context.strategy_stats = {'MR': {'wins': 0, 'total': 0},
+    context.strategy_stats = {'MR':  {'wins': 0, 'total': 0},
                               'MOM': {'wins': 0, 'total': 0},
-                              'VP': {'wins': 0, 'total': 0},
-                              'BK': {'wins': 0, 'total': 0},
-                              'DV': {'wins': 0, 'total': 0}}
+                              'VP':  {'wins': 0, 'total': 0},
+                              'BK':  {'wins': 0, 'total': 0},
+                              'DV':  {'wins': 0, 'total': 0},
+                              'RT':  {'wins': 0, 'total': 0}}
 
     all_symbols = list(SYMBOLS) + [MARKET_INDEX]
     subscribe(symbols=all_symbols, frequency='1d', count=config.DATA_COUNT)
@@ -299,7 +306,7 @@ def on_backtest_finished(context, indicator):
     pos_count = len(context.pos_info)
     print()
     print('=' * 56)
-    print('  回测结束 — V19.2 行业差异化多策略融合框架')
+    print('  回测结束 — V21 六策略行业差异化融合框架')
     print('=' * 56)
     print('  总交易: %d | 胜: %d | 负: %d | 胜率: %.1f%%'
           % (s['total_trades'], s['wins'], s['losses'],
@@ -307,7 +314,7 @@ def on_backtest_finished(context, indicator):
     print('  累计盈亏: %+.2f%%' % s['total_pnl'])
     print('  剩余持仓: %d 只' % pos_count)
     print('  ---- 策略分项 ----')
-    for name in ['MR', 'MOM', 'VP', 'BK', 'DV']:
+    for name in ['MR', 'MOM', 'VP', 'BK', 'DV', 'RT']:
         ss = context.strategy_stats[name]
         if ss['total'] > 0:
             print('  %s: 交易%d 胜率%.1f%%' %

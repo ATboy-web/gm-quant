@@ -148,17 +148,18 @@ SECTOR_CONFIGS = {
 
     # ==================================================================
     # 新能源（光伏、风电）— 高波动、强周期
-    # V19.2: 宽松止损+长持仓+突破策略，保留MR/VP双主导
+    # V20: MR降权+RT反转确认，避免左侧反复抄底
     # ==================================================================
     '新能源': {
         'vol_group': 'high',
         'cycle_type': 'cyclical',
-        'description': '景气周期波动大，MR+VP+突破策略',
+        'description': '景气周期波动大，RT反转确认+VP+MR',
         'strategies': {
-            'MR':  {'enabled': True,  'weight': 2.0},
-            'VP':  {'enabled': True,  'weight': 2.0},
-            'BK':  {'enabled': True,  'weight': 1.0},    # V19.2: 新增突破策略
-            'MOM': {'enabled': True,  'weight': 0.8},
+            'RT':  {'enabled': True,  'weight': 2.5},    # V20: 新增反转确认（高权重）
+            'MR':  {'enabled': True,  'weight': 1.5},   # V20: 2.0→1.5，降低左侧抄底
+            'VP':  {'enabled': True,  'weight': 1.5},
+            'BK':  {'enabled': True,  'weight': 0.8},   # V20: 1.0→0.8
+            'MOM': {'enabled': True,  'weight': 0.5},   # V20: 0.8→0.5
         },
         'rsi_buy': 28,
         'rsi_exit': 80,
@@ -177,14 +178,16 @@ SECTOR_CONFIGS = {
 
     # ==================================================================
     # 制造（工程机械、家电）— 中波动、周期性
+    # V21: 新增RT(三一重工2笔-10%), MR降权
     # ==================================================================
     '制造': {
         'vol_group': 'medium',
         'cycle_type': 'cyclical',
-        'description': '经济周期驱动，MR+MOM并重',
+        'description': '经济周期驱动，MR+MOM+RT',
         'strategies': {
-            'MR':  {'enabled': True,  'weight': 2.5},
+            'MR':  {'enabled': True,  'weight': 2.0},    # V21: 2.5→2.0
             'MOM': {'enabled': True,  'weight': 1.5},
+            'RT':  {'enabled': True,  'weight': 1.0},    # V21: 新增
             'VP':  {'enabled': True,  'weight': 1.0},
         },
         'rsi_buy': 30,
@@ -259,15 +262,18 @@ SECTOR_CONFIGS = {
 
     # ==================================================================
     # 化工 — 中波动、强周期
+    # V21: RT成为主导(2.0→2.5), MR继续降权(2.0→1.5)
+    #   CSV: 恒力石化6笔0%胜率-27.5%, 需要更强的RT信号
     # ==================================================================
     '化工': {
         'vol_group': 'medium',
         'cycle_type': 'cyclical',
-        'description': '产品价格周期驱动，VP+MR结合',
+        'description': '强周期需反转确认，RT主导',
         'strategies': {
-            'MR':  {'enabled': True,  'weight': 2.5},
+            'RT':  {'enabled': True,  'weight': 2.5},    # V21: 2.0→2.5（主导）
+            'MR':  {'enabled': True,  'weight': 1.5},   # V21: 2.0→1.5
             'VP':  {'enabled': True,  'weight': 1.5},
-            'MOM': {'enabled': True,  'weight': 0.8},
+            'MOM': {'enabled': True,  'weight': 0.5},
         },
         'rsi_buy': 30,
         'rsi_exit': 78,
@@ -286,27 +292,29 @@ SECTOR_CONFIGS = {
 
     # ==================================================================
     # 公用事业（电力）— 低波动、防御性
-    # V19.2: MR绝对主导+红利策略，优化参数
+    # V21: MR降权(4.0→2.5), RSI收紧(38→34), 新增RT防左侧抄底
+    #   CSV: 16笔31.2%胜率-9.1%, 中国核电8笔12.5%胜率-19.7%
     # ==================================================================
     '公用事业': {
         'vol_group': 'low',
         'cycle_type': 'defensive',
-        'description': '最稳定，超卖必反弹，MR+红利双驱',
+        'description': '最稳定但需防左侧，MR+RT+DV三驱',
         'strategies': {
-            'MR':  {'enabled': True,  'weight': 4.0},    # 绝对主导
-            'DV':  {'enabled': True,  'weight': 1.5},    # 辅助确认
-            'VP':  {'enabled': True,  'weight': 0.5},    # 降权
+            'MR':  {'enabled': True,  'weight': 2.5},    # V21: 4.0→2.5
+            'DV':  {'enabled': True,  'weight': 2.0},    # V21: 1.5→2.0
+            'RT':  {'enabled': True,  'weight': 1.5},    # V21: 新增
+            'VP':  {'enabled': True,  'weight': 0.5},
             'MOM': {'enabled': False, 'weight': 0.0},
         },
-        'rsi_buy': 38,           # 放宽（公用事业超卖浅就能弹）
+        'rsi_buy': 34,           # V21: 38→34
         'rsi_exit': 70,
         'rsi_deep_oversold': 25,
         'atr_stop_mult': 1.5,
         'atr_trail_mult': 2.5,
         'stop_loss_cap': 0.07,
-        'position_pct': 0.35,    # 公用事业安全，可加大仓位
-        'time_stop_days': 25,   # 防御股修复慢，给足时间
-        'entry_threshold': 0.25, # 降低门槛（MR权重高足以过滤）
+        'position_pct': 0.30,    # V21: 0.35→0.30
+        'time_stop_days': 20,   # V21: 25→20
+        'entry_threshold': 0.30, # V21: 0.25→0.30
         'vol_surge_min': 1.0,
         'vp_vol_decline': 0.80,
         'mom_stop_loss': 0.04,
@@ -343,16 +351,18 @@ SECTOR_CONFIGS = {
 
     # ==================================================================
     # 煤炭 — 中波动、强周期
+    # V20: DV提权+RT反转确认，MR降权避免左侧抄底
     # ==================================================================
     '煤炭': {
         'vol_group': 'medium',
         'cycle_type': 'cyclical',
-        'description': '煤价周期驱动，MR抄底+VP确认+红利',
+        'description': '煤价周期驱动，RT反转+DV红利+MR抄底',
         'strategies': {
-            'MR':  {'enabled': True,  'weight': 3.0},
-            'DV':  {'enabled': True,  'weight': 1.0},    # V19.2: 新增红利
-            'VP':  {'enabled': True,  'weight': 1.5},
-            'MOM': {'enabled': True,  'weight': 0.8},
+            'MR':  {'enabled': True,  'weight': 2.0},    # V20: 3.0→2.0，降低抄底权重
+            'DV':  {'enabled': True,  'weight': 2.0},    # V20: 1.0→2.0，红利策略提权
+            'RT':  {'enabled': True,  'weight': 1.5},    # V20: 新增反转确认
+            'VP':  {'enabled': True,  'weight': 1.0},    # V20: 1.5→1.0
+            'MOM': {'enabled': True,  'weight': 0.5},    # V20: 0.8→0.5
         },
         'rsi_buy': 30,
         'rsi_exit': 78,
@@ -381,6 +391,7 @@ DEFAULT_CONFIG = {
         'VP':  {'enabled': True,  'weight': 1.0},
         'BK':  {'enabled': False, 'weight': 0.0},
         'DV':  {'enabled': False, 'weight': 0.0},
+        'RT':  {'enabled': False, 'weight': 0.0},
     },
     'rsi_buy': 30,
     'rsi_exit': 80,

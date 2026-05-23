@@ -231,6 +231,20 @@ def _get_regime_weight(strategy_name, regime):
         else:
             return 1.0   # 其他市场正常权重
 
+    if strategy_name == 'BK':
+        return 1.0  # 突破策略正常权重
+
+    if strategy_name == 'DV':
+        return 1.0  # 红利策略正常权重
+
+    if strategy_name == 'RT':
+        if regime == 'bear':
+            return 2.0   # 熊市反转确认高权重（抄底确认型）
+        elif regime == 'range':
+            return 1.5   # 震荡市反转确认中等权重
+        else:
+            return 0.8   # 牛市不需要抄底确认
+
     return 1.0
 
 

@@ -114,6 +114,7 @@ class TradeExecutor:
             vp_exit  = exit_signals.get('VP')
             bk_exit  = exit_signals.get('BK')
             dv_exit  = exit_signals.get('DV')
+            rt_exit  = exit_signals.get('RT')
 
             owner_strategy = info.get('strategy', 'MR')
             vote_result = fusion.vote_exit(mr_exit, mom_exit, vp_exit, regime,
@@ -182,10 +183,11 @@ class TradeExecutor:
             vp_sig  = strategy_signals.get('VP')
             bk_sig  = strategy_signals.get('BK')
             dv_sig  = strategy_signals.get('DV')
+            rt_sig  = strategy_signals.get('RT')
 
             # 行业差异化投票（传入行业权重）
             vote_result = self._vote_with_sector_weights(
-                mr_sig, mom_sig, vp_sig, bk_sig, dv_sig, regime, sector
+                mr_sig, mom_sig, vp_sig, bk_sig, dv_sig, rt_sig, regime, sector
             )
 
             if vote_result['action'] == 'BUY':
@@ -195,7 +197,7 @@ class TradeExecutor:
                 best_strat = 'MR'
                 best_score = 0
                 for sig, name in [(mr_sig, 'MR'), (mom_sig, 'MOM'), (vp_sig, 'VP'),
-                                   (bk_sig, 'BK'), (dv_sig, 'DV')]:
+                                   (bk_sig, 'BK'), (dv_sig, 'DV'), (rt_sig, 'RT')]:
                     if sig and sig.get('action') == 'BUY':
                         if sig.get('score', 0) > best_score:
                             best_score = sig['score']
@@ -218,12 +220,12 @@ class TradeExecutor:
         candidates.sort(key=lambda x: x['confidence'], reverse=True)
         return candidates
 
-    def _vote_with_sector_weights(self, mr_sig, mom_sig, vp_sig, bk_sig, dv_sig, regime, sector):
+    def _vote_with_sector_weights(self, mr_sig, mom_sig, vp_sig, bk_sig, dv_sig, rt_sig, regime, sector):
         """
         行业差异化投票融合。
 
         用 sector_config 中各策略的权重替代 fusion.py 中的固定权重。
-        支持 5 个策略: MR, MOM, VP, BK, DV
+        支持 6 个策略: MR, MOM, VP, BK, DV, RT
         """
         signals = [
             ('MR',  mr_sig),
@@ -231,6 +233,7 @@ class TradeExecutor:
             ('VP',  vp_sig),
             ('BK',  bk_sig),
             ('DV',  dv_sig),
+            ('RT',  rt_sig),
         ]
 
         buy_votes = 0.0

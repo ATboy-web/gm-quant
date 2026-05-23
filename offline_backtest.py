@@ -1,5 +1,10 @@
 """
-offline_backtest.py - V19.2 离线回测脚本
+offline_backtest.py - V20 离线回测脚本
+
+V20 改进:
+  1. 新增反转确认策略(RT)
+  2. 6策略体系: MR + MOM + VP + BK + DV + RT
+  3. 化工/新能源/煤炭行业针对性优化
 
 V19.2 改进:
   1. 新增突破策略(BK)和红利策略(DV)
@@ -33,6 +38,7 @@ import strategy_momentum
 import strategy_vp
 import strategy_breakout
 import strategy_dividend
+import strategy_reversal
 import fusion
 
 # =============================================================================
@@ -46,9 +52,9 @@ MARKET_INDEX = config.MARKET_INDEX
 SYMBOL_SECTOR_MAP = stock_pool.get_symbol_sector_map()
 
 print('=' * 60)
-print('  V19.2 离线回测 — 行业差异化多策略融合框架')
-print('  策略: 均值回归 + 动量趋势 + 量价背离 + 突破 + 红利')
-print('  V19.2: 12个行业各自配置策略参数 + 2个新策略')
+print('  V20 离线回测 — 六策略行业差异化融合框架')
+print('  策略: MR + MOM + VP + BK + DV + RT')
+print('  V20: RT反转确认 + 弱势行业优化')
 print('  股票池: %d 只 / %d 行业' % (len(SYMBOLS), len(stock_pool.get_sector_list())))
 print('=' * 60)
 sector_config.print_summary()
@@ -119,6 +125,7 @@ class V19BacktestEngine:
             'VP':  {'wins': 0, 'total': 0, 'pnl': 0.0},
             'BK':  {'wins': 0, 'total': 0, 'pnl': 0.0},
             'DV':  {'wins': 0, 'total': 0, 'pnl': 0.0},
+            'RT':  {'wins': 0, 'total': 0, 'pnl': 0.0},
         }
         # 行业统计
         self.sector_stats = {}
@@ -328,7 +335,7 @@ class V19BacktestEngine:
 
         print()
         print('=' * 60)
-        print('  V19.2 行业差异化回测结果摘要')
+        print('  V20 六策略行业差异化回测结果摘要')
         print('=' * 60)
         print('  初始资金:   %.0f' % initial)
         print('  最终净值:   %.0f' % final_value)
@@ -342,7 +349,7 @@ class V19BacktestEngine:
 
         # ---- 策略分项 ----
         print('  ---- 策略分项 ----')
-        for name in ['MR', 'MOM', 'VP', 'BK', 'DV']:
+        for name in ['MR', 'MOM', 'VP', 'BK', 'DV', 'RT']:
             ss = self.strategy_stats[name]
             if ss['total'] > 0:
                 wr = ss['wins'] / ss['total'] * 100

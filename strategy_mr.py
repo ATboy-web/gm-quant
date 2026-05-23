@@ -74,6 +74,16 @@ def get_signal(df, sector=None, sector_momentum=None, regime='range'):
         return {'action': 'HOLD', 'confidence': 0.0, 'score': 0.0,
                 'rsi': round(rsi, 1), 'reason': 'RSI=%.0f >= %d' % (rsi, rsi_buy_threshold)}
 
+    # ---- V21: 趋势过滤（防止下跌趋势中抄底） ----
+    ma20 = indicators.calc_sma(closes, 20)
+    ma60 = indicators.calc_sma(closes, 60)
+    sector_mom = sector_momentum.get(sector, 0) if sector_momentum and sector else 0
+    # 如果MA20<MA60且行业动量为负，拒绝信号（左侧市场不适合均值回归）
+    if ma20 is not None and ma60 is not None and ma20 < ma60 and sector_mom < -0.02:
+        return {'action': 'HOLD', 'confidence': 0.0, 'score': 0.0,
+                'rsi': round(rsi, 1),
+                'reason': '趋势下跌(MA20<MA60 行业%.1f%%)不抄底' % (sector_mom * 100)}
+
     # ---- 极度超卖快速路径 ----
     if rsi < 18:
         return {'action': 'BUY', 'confidence': 0.95, 'score': 0.99,
