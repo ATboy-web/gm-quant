@@ -142,6 +142,9 @@ class V19BacktestEngine:
         if bar_idx < config.DATA_COUNT:
             return
 
+        # V19.2: 清理过期冷却期
+        self.exec_engine.cleanup_cooldowns(date_str)
+
         regime = self._detect_regime(bar_idx)
         regime_cfg = config.REGIME_PARAMS.get(regime, config.REGIME_PARAMS['range'])
 
@@ -160,6 +163,8 @@ class V19BacktestEngine:
         for sym, price, vote, info in sells:
             if sym in self.positions:
                 self._execute_sell(sym, price, vote['reason'], date_str)
+                # V19.2: 记录卖出，启动冷却期
+                self.exec_engine.record_sell(sym, date_str)
 
         # 行业动量
         sector_momentum = self._calc_sector_momentum(bar_idx)

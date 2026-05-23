@@ -148,31 +148,31 @@ SECTOR_CONFIGS = {
 
     # ==================================================================
     # 新能源（光伏、风电）— 高波动、强周期
-    # V19.2: 大幅放宽止损+持仓，降低MR权重，避免过早止损导致反复小亏
+    # V19.2: 宽松止损+长持仓+突破策略，保留MR/VP双主导
     # ==================================================================
     '新能源': {
         'vol_group': 'high',
         'cycle_type': 'cyclical',
-        'description': '景气周期波动大，VP量价背离为主+MR辅助',
+        'description': '景气周期波动大，MR+VP+突破策略',
         'strategies': {
-            'VP':  {'enabled': True,  'weight': 2.5},    # V19.2: VP升为主导
-            'MR':  {'enabled': True,  'weight': 1.5},    # V19.2: MR降权(2.0→1.5)
-            'MOM': {'enabled': True,  'weight': 0.8},
+            'MR':  {'enabled': True,  'weight': 2.0},
+            'VP':  {'enabled': True,  'weight': 2.0},
             'BK':  {'enabled': True,  'weight': 1.0},    # V19.2: 新增突破策略
+            'MOM': {'enabled': True,  'weight': 0.8},
         },
-        'rsi_buy': 30,           # V19.2: 28→30 稍放宽（避免接更深的飞刀）
-        'rsi_exit': 78,          # V19.2: 80→78 稍收紧止盈
+        'rsi_buy': 28,
+        'rsi_exit': 80,
         'rsi_deep_oversold': 18,
-        'atr_stop_mult': 2.5,    # V19.1: 2.0→2.5 大幅放宽止损
-        'atr_trail_mult': 3.5,   # V19.1: 2.8→3.5 让利润跑更远
-        'stop_loss_cap': 0.12,   # V19.1: 0.10→0.12 提高止损上限
-        'position_pct': 0.18,    # V19.2: 0.20→0.18 略降仓位
-        'time_stop_days': 22,    # V19.2: 15→22 给强周期更多修复时间
-        'entry_threshold': 0.38, # V19.2: 0.35→0.38 提高门槛减少误入
+        'atr_stop_mult': 2.5,    # 放宽止损
+        'atr_trail_mult': 3.5,   # 让利润跑更远
+        'stop_loss_cap': 0.12,   # 提高止损上限
+        'position_pct': 0.18,    # 略降仓位
+        'time_stop_days': 22,    # 给强周期更多修复时间
+        'entry_threshold': 0.35,
         'vol_surge_min': 1.3,
         'vp_vol_decline': 0.60,
-        'mom_stop_loss': 0.10,   # V19.2: 0.08→0.10
-        'mom_take_profit': 0.20, # V19.2: 0.15→0.20
+        'mom_stop_loss': 0.08,
+        'mom_take_profit': 0.15,
     },
 
     # ==================================================================
@@ -286,29 +286,29 @@ SECTOR_CONFIGS = {
 
     # ==================================================================
     # 公用事业（电力）— 低波动、防御性
-    # V19.2: MR绝对主导+红利策略，拉长持仓，降低入场门槛
+    # V19.2: MR绝对主导+红利策略，优化参数
     # ==================================================================
     '公用事业': {
         'vol_group': 'low',
         'cycle_type': 'defensive',
         'description': '最稳定，超卖必反弹，MR+红利双驱',
         'strategies': {
-            'MR':  {'enabled': True,  'weight': 4.0},    # V19.2: 3.5→4.0 绝对主导
-            'DV':  {'enabled': True,  'weight': 2.0},    # V19.2: 新增红利策略
-            'VP':  {'enabled': True,  'weight': 0.5},    # V19.2: 1.0→0.5 降权
+            'MR':  {'enabled': True,  'weight': 4.0},    # 绝对主导
+            'DV':  {'enabled': True,  'weight': 1.5},    # 辅助确认
+            'VP':  {'enabled': True,  'weight': 0.5},    # 降权
             'MOM': {'enabled': False, 'weight': 0.0},
         },
-        'rsi_buy': 38,           # V19.2: 35→38 大幅放宽（公用事业超卖浅就能弹）
-        'rsi_exit': 70,          # V19.2: 72→70 稍收紧
-        'rsi_deep_oversold': 25, # V19.2: 22→25 公用事业极少到20以下
-        'atr_stop_mult': 1.5,   # V19.2: 1.3→1.5
-        'atr_trail_mult': 2.5,   # V19.2: 2.0→2.5
-        'stop_loss_cap': 0.07,   # V19.2: 0.06→0.07
-        'position_pct': 0.35,    # V19.2: 0.30→0.35 公用事业安全，可加大仓位
-        'time_stop_days': 25,    # V19.2: 15→25 防御股修复慢，给足时间
-        'entry_threshold': 0.25, # V19.2: 0.28→0.25 降低门槛（MR权重高足以过滤）
+        'rsi_buy': 38,           # 放宽（公用事业超卖浅就能弹）
+        'rsi_exit': 70,
+        'rsi_deep_oversold': 25,
+        'atr_stop_mult': 1.5,
+        'atr_trail_mult': 2.5,
+        'stop_loss_cap': 0.07,
+        'position_pct': 0.35,    # 公用事业安全，可加大仓位
+        'time_stop_days': 25,   # 防御股修复慢，给足时间
+        'entry_threshold': 0.25, # 降低门槛（MR权重高足以过滤）
         'vol_surge_min': 1.0,
-        'vp_vol_decline': 0.80,  # V19.2: 0.75→0.80 公用事业本身量就低
+        'vp_vol_decline': 0.80,
         'mom_stop_loss': 0.04,
         'mom_take_profit': 0.10,
     },

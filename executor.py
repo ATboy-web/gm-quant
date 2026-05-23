@@ -29,6 +29,9 @@ class TradeExecutor:
         # 缓存: {sector: [strategy instances]}，随 regime 更新
         self._strategy_cache = {}
         self._cache_regime = None
+        # V19.2: 冷却期 — 卖出后N天内不再买入同一股票
+        self.cooldown_days = 3
+        self._sell_history = {}  # {symbol: sell_date_str}
 
     def _get_strategies(self, sector, regime):
         """获取行业策略实例（带缓存）。"""
@@ -38,6 +41,25 @@ class TradeExecutor:
         if sector not in self._strategy_cache:
             self._strategy_cache[sector] = self.factory.create_for_sector(sector, regime)
         return self._strategy_cache[sector]
+
+    def record_sell(self, symbol, sell_date_str):
+        """V19.2: 记录卖出，启动冷却期。"""
+        self._sell_history[symbol] = sell_date_str
+
+    def cleanup_cooldowns(self, today_str):
+        """V19.2: 清理过期冷却期。"""
+        from datetime import datetime as dt
+        expired = []
+        for sym, sell_date in self._sell_history.items():
+            try:
+                days = (dt.strptime(today_str, '%Y-%m-%d') -
+                        dt.strptime(sell_date, '%Y-%m-%d')).days
+                if days >= self.cooldown_days:
+                    expired.append(sym)
+            except Exception:
+                expired.append(sym)
+        for sym in expired:
+            del self._sell_history[sym]
 
     # ==================================================================
     # 出场检查
@@ -127,6 +149,10 @@ class TradeExecutor:
 
         for sym in symbols:
             if sym in pos_info_dict:
+                continue
+
+            # V19.2: 冷却期检查
+            if sym in self._sell_history:
                 continue
 
             sector = symbol_sector.get(sym, '未知')

@@ -148,9 +148,13 @@ def vote_exit(mr_exit, mom_exit, vp_exit, regime='range', owner_strategy=None):
         action = sig.get('action', 'HOLD')
         weight = _get_regime_weight(name, regime)
         reason = sig.get('reason', name)
+        conf = sig.get('confidence', 0.0)
 
         if action == 'SELL':
-            sell_votes += weight
+            # V19.2: MOM 短暂破MA20 (conf≤0.5) 不参与交叉验证计票
+            is_weak_trend = (conf <= 0.5 and '短暂' in reason)
+            if not is_weak_trend:
+                sell_votes += weight
             reasons.append(reason)
             if name == owner_strategy:
                 owner_sell = True
@@ -186,8 +190,8 @@ def vote_exit(mr_exit, mom_exit, vp_exit, regime='range', owner_strategy=None):
             'reason': 'FUSION_强卖[%s]' % '|'.join(reasons),
         }
 
-    # 4. 趋势/时间类出场 → 需交叉验证（归属策略必须在场，或2个非归属策略同意）
-    if sell_votes >= 1.5:
+    # 4. 趋势/时间类出场 → 需交叉验证（V19.2: 提高到2.0，低置信度不计入）
+    if sell_votes >= 2.0:
         # 至少2个策略同意趋势/时间出场
         return {
             'action': 'SELL',

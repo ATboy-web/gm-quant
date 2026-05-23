@@ -129,6 +129,11 @@ def _on_bar_impl(context, bars=None):
     )
     for sym, price, vote, info in sells:
         _do_sell(context, sym, price, vote['reason'], info)
+        # V19.2: 记录卖出，启动冷却期
+        exec_engine.record_sell(sym, today)
+
+    # V19.2: 清理过期冷却期
+    exec_engine.cleanup_cooldowns(today)
 
     # Step 4: 行业动量
     sector_momentum = screener.calc_sector_momentum(context)
