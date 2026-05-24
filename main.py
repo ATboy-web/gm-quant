@@ -104,7 +104,11 @@ def init(context):
                               'RT':  {'wins': 0, 'total': 0}}
 
     all_symbols = list(SYMBOLS) + [MARKET_INDEX]
-    subscribe(symbols=all_symbols, frequency='1d', count=config.DATA_COUNT)
+    # GM限制每次subscribe最多50只, 分批订阅
+    _batch_size = 50
+    for _i in range(0, len(all_symbols), _batch_size):
+        _batch = all_symbols[_i:_i + _batch_size]
+        subscribe(symbols=_batch, frequency='1d', count=config.DATA_COUNT)
     schedule(schedule_func=on_bar, date_rule='1d', time_rule='14:50:00')
     context.on_backtest_finished = on_backtest_finished
 
