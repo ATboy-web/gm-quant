@@ -59,9 +59,8 @@ def sell(strategy, symbol, pnl_pct, reason, regime):
 
 
 def heartbeat(pos_count, cash, total_val, sentiment=None):
-    """记录心跳(每天一次)"""
-    s = ','.join(f'{k}={v:.1f}' for k,v in (sentiment or {}).items()) if sentiment else ''
-    _write(f'H|P{pos_count}|C{cash:.0f}|V{total_val:.0f}|{s}')
+    """记录心跳 → 不写文件(太频繁), 仅内存计数"""
+    pass  # 只在每天结束时由 status() 写一次
 
 
 def error(msg):
