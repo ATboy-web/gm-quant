@@ -49,6 +49,7 @@ import stock_pool
 import screener
 import sector_config
 import executor
+import trace
 
 # =============================================================================
 # 全局初始化
@@ -146,6 +147,11 @@ def _on_bar_impl(context, bars=None):
     sector_momentum = screener.calc_sector_momentum(context)
 
     # Step 5: 选股入场（使用 executor）
+    try:
+        cash = get_cash()
+        trace.heartbeat(len(context.pos_info), cash.available, cash.nav, getattr(context, '_sentiment', None))
+    except Exception:
+        trace.heartbeat(len(context.pos_info), 0, 0, None)
     max_pos = regime_cfg['max_positions']
     occupied = set(context.sector_pos.keys())
     if len(context.pos_info) < max_pos:
@@ -238,6 +244,8 @@ def _do_buys(context, candidates, max_pos):
             order_type=OrderType_Market,
             position_effect=PositionEffect_Open
         )
+        try: trace.buy(c.get('best_strategy','?'), sym, price, c.get('position_pct',0), len(c.get('voters',[])), regime)
+        except: pass
 
         entry_date = getattr(context, '_today', str(context.now.strftime('%Y-%m-%d')))
         vol_group = stock_pool.get_sector_volatility_group(sector)
@@ -287,6 +295,8 @@ def _do_sell(context, sym, price, reason, info):
     strat = info.get('strategy', '?')
     print('[卖出] %s | %s | %s | 价%.2f | %+.2f%% | %s'
           % (sym, sector, reason, price, pnl_pct, strat))
+    try: trace.sell(strat, sym, pnl_pct/100, reason, regime)
+    except: pass
 
     context.stats['total_trades'] += 1
     context.stats['total_pnl'] += pnl_pct

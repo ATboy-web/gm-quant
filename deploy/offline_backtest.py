@@ -33,6 +33,7 @@ import stock_pool
 import screener
 import sector_config
 import executor
+import trace
 import strategy_mr
 import strategy_momentum
 import strategy_vp
