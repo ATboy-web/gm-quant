@@ -244,7 +244,7 @@ def _do_buys(context, candidates, max_pos):
             order_type=OrderType_Market,
             position_effect=PositionEffect_Open
         )
-        try: trace.buy(c.get('best_strategy','?'), sym, price, c.get('position_pct',0), len(c.get('voters',[])), regime)
+        try: trace.buy(c.get('best_strategy','?'), sym, price, c.get('position_pct',0), len(c.get('voters',[])), context.regime)
         except: pass
 
         entry_date = getattr(context, '_today', str(context.now.strftime('%Y-%m-%d')))
@@ -295,7 +295,7 @@ def _do_sell(context, sym, price, reason, info):
     strat = info.get('strategy', '?')
     print('[卖出] %s | %s | %s | 价%.2f | %+.2f%% | %s'
           % (sym, sector, reason, price, pnl_pct, strat))
-    try: trace.sell(strat, sym, pnl_pct/100, reason, regime)
+    try: trace.sell(strat, sym, pnl_pct/100, reason, context.regime)
     except: pass
 
     context.stats['total_trades'] += 1
