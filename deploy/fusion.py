@@ -190,8 +190,8 @@ def vote_exit(mr_exit, mom_exit, vp_exit, regime='range', owner_strategy=None):
             'reason': 'FUSION_强卖[%s]' % '|'.join(reasons),
         }
 
-    # 4. 趋势/时间类出场 → 需交叉验证（V19.2: 提高到2.0，低置信度不计入）
-    if sell_votes >= 2.0:
+    # 4. 趋势/时间类出场 → 需交叉验证（V20: ≥1.5, 放宽入场也放宽出场）
+    if sell_votes >= 1.5:
         # 至少2个策略同意趋势/时间出场
         return {
             'action': 'SELL',

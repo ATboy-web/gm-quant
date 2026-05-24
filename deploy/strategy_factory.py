@@ -1,22 +1,5 @@
 """
-strategy_factory.py - V20 策略工厂
-
-根据行业配置动态创建策略实例，传入行业差异化参数。
-这样每个行业拿到的策略对象，其内部参数是按该行业定制的。
-
-V20 新增:
-  - 反转确认策略(RT): strategy_reversal.py
-  - 6策略体系: MR + MOM + VP + BK + DV + RT
-
-V19.2 新增:
-  - 突破策略(BK): strategy_breakout.py
-  - 红利策略(DV): strategy_dividend.py
-
-用法:
-    factory = StrategyFactory()
-    strategies = factory.create_for_sector('金融', regime='range')
-    for strat in strategies:
-        signal = strat.get_signal(df, sector='金融', sector_cfg=cfg)
+strategy_factory.py - V23 策略工厂 (6策略: MR/MOM/VP/BK/DV/RT)
 """
 
 import strategy_mr

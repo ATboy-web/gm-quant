@@ -165,10 +165,11 @@ def _on_bar_impl(context, bars=None):
 # 数据获取辅助
 # =============================================================================
 
-def _preload_data(context):
-    all_symbols = list(SYMBOLS) + [MARKET_INDEX]
+def _preload_data(context, symbols=None):
+    if symbols is None:
+        symbols = list(SYMBOLS) + [MARKET_INDEX]
     loaded = 0
-    for sym in all_symbols:
+    for sym in symbols:
         df = _get_bar_data(context, sym)
         if df is not None:
             loaded += 1

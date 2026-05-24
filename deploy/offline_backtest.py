@@ -173,8 +173,12 @@ class V19BacktestEngine:
                 # V19.2: 记录卖出，启动冷却期
                 self.exec_engine.record_sell(sym, date_str)
 
-        # 行业动量
+        # 行业动量 → 模拟市场情绪 (软化映射)
         sector_momentum = self._calc_sector_momentum(bar_idx)
+        sentiment = {}
+        for sec, mom in sector_momentum.items():
+            sentiment[sec] = max(-1.0, min(1.0, mom * 5))  # 5%动量=+1, -5%=-1
+        self.exec_engine._sentiment = sentiment
 
         # 入场
         max_pos = regime_cfg['max_positions']

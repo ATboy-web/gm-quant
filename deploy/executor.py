@@ -15,6 +15,7 @@ import config
 import indicators
 import stock_pool
 import sector_config
+import sentiment_engine
 import strategy_factory
 import fusion
 
@@ -30,7 +31,7 @@ class TradeExecutor:
         self._strategy_cache = {}
         self._cache_regime = None
         # V19.2: 冷却期 — 卖出后N天内不再买入同一股票
-        self.cooldown_days = 3
+        self.cooldown_days = 1   # 只冷却1天
         self._sell_history = {}  # {symbol: sell_date_str}
         # V22: 连亏熔断
         self._loss_streak = 0
@@ -164,38 +165,34 @@ class TradeExecutor:
     # ==================================================================
 
     def find_buy_candidates(self, symbols, occupied_sectors, pos_info_dict,
-                            data_cache, sector_momentum, regime):
+                            data_cache, sector_momentum, regime, max_needed=999):
         """
-        扫描所有候选股，使用行业差异化策略投票选股。
-
-        Args:
-            symbols:          全部候选股票代码
-            occupied_sectors: 已占用行业集合
-            pos_info_dict:    当前持仓
-            data_cache:       数据缓存
-            sector_momentum:  行业动量
-            regime:           市场状态
-
-        Returns:
-            list of buy candidate dicts, sorted by confidence desc
+        扫描候选股。仅保留快速价格过滤，不限制候选数保证选股质量。
         """
         symbol_sector = stock_pool.get_symbol_sector_map()
         candidates = []
 
         for sym in symbols:
+            if len(candidates) >= max_needed:
+                break
+
             if sym in pos_info_dict:
                 continue
 
-            # V19.2: 冷却期检查
             if sym in self._sell_history:
                 continue
 
             sector = symbol_sector.get(sym, '未知')
-            if sector in occupied_sectors:
-                continue
 
             df = data_cache.get(sym)
             if df is None:
+                continue
+            closes = df['close'].values
+            if len(closes) < 3:
+                continue
+            cur_price = float(closes[-1])
+            # 快速价格过滤
+            if cur_price < config.PRICE_MIN or cur_price > config.PRICE_MAX:
                 continue
 
             sector_cfg = sector_config.get_sector_config(sector, regime)
@@ -203,6 +200,15 @@ class TradeExecutor:
 
             if not strategies:
                 continue
+
+            # === V23: 市场情绪过滤 - 情绪先行 ===
+            if hasattr(self, '_sentiment') and self._sentiment:
+                if sentiment_engine.get_sector_freeze(sector, self._sentiment):
+                    continue
+                bias = sentiment_engine.get_sector_bias(sector, self._sentiment)
+                if bias < 0.9:
+                    sector_cfg = dict(sector_cfg)
+                    sector_cfg['entry_threshold'] = sector_cfg.get('entry_threshold', 0.35) * (1.5 - bias * 0.5)
 
             # 各策略打分
             strategy_signals = {}
@@ -219,7 +225,7 @@ class TradeExecutor:
             dv_sig  = strategy_signals.get('DV')
             rt_sig  = strategy_signals.get('RT')
 
-            # 行业差异化投票（传入行业权重）
+            # 行业差异化投票
             vote_result = self._vote_with_sector_weights(
                 mr_sig, mom_sig, vp_sig, bk_sig, dv_sig, rt_sig, regime, sector
             )
@@ -255,19 +261,10 @@ class TradeExecutor:
         return candidates
 
     def _vote_with_sector_weights(self, mr_sig, mom_sig, vp_sig, bk_sig, dv_sig, rt_sig, regime, sector):
-        """
-        行业差异化投票融合。
-
-        用 sector_config 中各策略的权重替代 fusion.py 中的固定权重。
-        支持 6 个策略: MR, MOM, VP, BK, DV, RT
-        """
+        """行业差异化投票融合。6策略: MR/MOM/VP/BK/DV/RT"""
         signals = [
-            ('MR',  mr_sig),
-            ('MOM', mom_sig),
-            ('VP',  vp_sig),
-            ('BK',  bk_sig),
-            ('DV',  dv_sig),
-            ('RT',  rt_sig),
+            ('MR',  mr_sig), ('MOM', mom_sig), ('VP',  vp_sig),
+            ('BK',  bk_sig), ('DV',  dv_sig),  ('RT',  rt_sig),
         ]
 
         buy_votes = 0.0
@@ -291,39 +288,27 @@ class TradeExecutor:
             elif action == 'SELL':
                 sell_votes += weight
 
-        # ---- 决策 (与 fusion.py 逻辑一致，但使用行业权重) ----
-        if buy_votes >= 4.0:
+        # ---- 决策 ----
+        if buy_votes >= 2.0:
             avg_conf = sum(confidences) / len(confidences) if confidences else 0.5
             return {
-                'action': 'BUY',
-                'confidence': avg_conf,
-                'position_pct': 1.0,
-                'voters': voters,
-                'reason': 'FUSION_强一致[%s]' % '+'.join(voters),
+                'action': 'BUY', 'confidence': avg_conf,
+                'position_pct': 1.0, 'voters': voters,
+                'reason': 'FUSION[%s]' % '+'.join(voters),
             }
-        elif buy_votes >= 2.0:
+        elif buy_votes >= 1.0:
             avg_conf = sum(confidences) / len(confidences) if confidences else 0.5
-            if sell_votes > 0:
-                pos_pct = 0.50
-                reason = 'FUSION_MR主导(有异议)[%s]' % '+'.join(voters)
-            else:
-                pos_pct = 0.70
-                reason = 'FUSION_MR主导[%s]' % '+'.join(voters)
             return {
-                'action': 'BUY',
-                'confidence': avg_conf,
-                'position_pct': pos_pct,
-                'voters': voters,
-                'reason': reason,
+                'action': 'BUY', 'confidence': avg_conf,
+                'position_pct': 0.70, 'voters': voters,
+                'reason': 'FUSION_弱[%s]' % '+'.join(voters),
             }
-        elif buy_votes >= 1.5:
+        elif buy_votes >= 0.5:
             avg_conf = sum(confidences) / len(confidences) if confidences else 0.3
             return {
-                'action': 'BUY',
-                'confidence': avg_conf,
-                'position_pct': 0.50,
-                'voters': voters,
-                'reason': 'FUSION_弱确认[%s]' % '+'.join(voters),
+                'action': 'BUY', 'confidence': avg_conf,
+                'position_pct': 0.40, 'voters': voters,
+                'reason': 'FUSION_单[%s]' % '+'.join(voters),
             }
 
         return {
