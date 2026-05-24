@@ -1,5 +1,5 @@
 """
-strategy_dividend.py - 红利策略 (V19.2)
+strategy_dividend.py - 红利策略 
 
 适用于低波动防御行业（金融/消费/煤炭/公用事业），
 以股息率+低估值为核心，追求稳健收益。
