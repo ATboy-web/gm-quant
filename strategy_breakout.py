@@ -1,5 +1,5 @@
 """
-strategy_breakout.py - 突破策略 (V19.2)
+strategy_breakout.py - 突破策略 
 
 适用于高波动行业（有色/科技/军工/新能源），
 捕捉价格突破关键阻力位后的趋势加速行情。
