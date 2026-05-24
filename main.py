@@ -1,17 +1,14 @@
 """
-main.py - V20 六策略行业差异化融合框架
+main.py - V24 六策略行业差异化融合框架
 
-V20 改进:
   1. 新增反转确认策略(RT)
   2. 6策略体系: MR + MOM + VP + BK + DV + RT
   3. 化工/新能源/煤炭行业针对性优化（RT反转确认替代MR左侧抄底）
 
-V19.2 改进:
   1. 新增突破策略(BK)和红利策略(DV)
   2. 新能源/公用事业参数大幅优化
   3. 高波动行业添加BK，低波动行业添加DV
 
-V19 核心改进:
   1. 行业差异化: 12个行业各自配置策略参数（不再一套参数走天下）
   2. 策略工厂: 根据行业+市场状态动态创建策略实例
   3. 代码模块化: 交易逻辑抽离到 executor.py，主程序只做初始化+回调
@@ -25,8 +22,8 @@ V19 核心改进:
   strategy_mr.py   ← 均值回归策略
   strategy_momentum.py ← 动量趋势策略
   strategy_vp.py   ← 量价背离策略
-  strategy_breakout.py ← 突破策略 (V19.2)
-  strategy_dividend.py ← 红利策略 (V19.2)
+  strategy_breakout.py ← 突破策略 
+  strategy_dividend.py ← 红利策略 
   strategy_reversal.py ← 反转确认策略 (V20)
   fusion.py        ← 投票融合引擎
   config.py        ← 全局参数
@@ -61,11 +58,10 @@ SYMBOLS       = stock_pool.get_all_symbols()
 SYMBOL_SECTOR = stock_pool.get_symbol_sector_map()
 MARKET_INDEX  = config.MARKET_INDEX
 
-# V19 交易执行器
 exec_engine = executor.TradeExecutor()
 
 print('=' * 60)
-print('  V21 六策略行业差异化融合框架')
+print('  V24 六策略行业差异化融合框架')
 print('  策略: MR + MOM + VP + BK + DV + RT(反转确认)')
 print('  V21: GM主程序同步 + CSV分析针对性优化')
 print('  股票池: %d 只 / %d 行业'
@@ -153,10 +149,8 @@ def _on_bar_impl(context, bars=None):
     )
     for sym, price, vote, info in sells:
         _do_sell(context, sym, price, vote['reason'], info)
-        # V19.2: 记录卖出，启动冷却期
         exec_engine.record_sell(sym, today)
 
-    # V19.2: 清理过期冷却期
     exec_engine.cleanup_cooldowns(today)
 
     # Step 4: 行业动量
@@ -333,7 +327,7 @@ def on_backtest_finished(context, indicator):
     pos_count = len(context.pos_info)
     print()
     print('=' * 56)
-    print('  回测结束 — V21 六策略行业差异化融合框架')
+    print('  回测结束 — V24 六策略行业差异化融合框架')
     print('=' * 56)
     print('  总交易: %d | 胜: %d | 负: %d | 胜率: %.1f%%'
           % (s['total_trades'], s['wins'], s['losses'],
