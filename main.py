@@ -103,12 +103,11 @@ def init(context):
                               'DV':  {'wins': 0, 'total': 0},
                               'RT':  {'wins': 0, 'total': 0}}
 
-    all_symbols = list(SYMBOLS) + [MARKET_INDEX]
-    # GM限制每次subscribe最多50只, 分批订阅
-    _batch_size = 50
-    for _i in range(0, len(all_symbols), _batch_size):
-        _batch = all_symbols[_i:_i + _batch_size]
-        subscribe(symbols=_batch, frequency='1d', count=config.DATA_COUNT)
+    # GM订阅限制50只, 前49只+大盘指数=50
+    _all = list(SYMBOLS)[:49] + [MARKET_INDEX]
+    subscribe(symbols=_all, frequency='1d', count=config.DATA_COUNT)
+    # 修正SYMBOLS为实际订阅的 (保持主逻辑不变)
+    context.SYMBOLS = _all[:-1]  # 去掉大盘指数
     schedule(schedule_func=on_bar, date_rule='1d', time_rule='14:50:00')
     context.on_backtest_finished = on_backtest_finished
 
@@ -170,7 +169,7 @@ def _on_bar_impl(context, bars=None):
     occupied = set(context.sector_pos.keys())
     if len(context.pos_info) < max_pos:
         candidates = exec_engine.find_buy_candidates(
-            SYMBOLS, occupied, context.pos_info,
+            context.SYMBOLS, occupied, context.pos_info,
             context.data_cache, sector_momentum, regime
         )
         _do_buys(context, candidates, max_pos)
