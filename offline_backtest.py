@@ -1,17 +1,14 @@
 """
-offline_backtest.py - V20 离线回测脚本
+offline_backtest.py - 离线回测脚本
 
-V20 改进:
   1. 新增反转确认策略(RT)
   2. 6策略体系: MR + MOM + VP + BK + DV + RT
   3. 化工/新能源/煤炭行业针对性优化
 
-V19.2 改进:
   1. 新增突破策略(BK)和红利策略(DV)
   2. 新能源/公用事业参数优化
   3. 策略工厂支持5策略
 
-V19 改进:
   1. 行业差异化策略参数
   2. 策略工厂动态创建
   3. executor 执行器复用
@@ -53,7 +50,7 @@ MARKET_INDEX = config.MARKET_INDEX
 SYMBOL_SECTOR_MAP = stock_pool.get_symbol_sector_map()
 
 print('=' * 60)
-print('  V20 离线回测 — 六策略行业差异化融合框架')
+print('  离线回测 — 六策略行业差异化融合框架')
 print('  策略: MR + MOM + VP + BK + DV + RT')
 print('  V20: RT反转确认 + 弱势行业优化')
 print('  股票池: %d 只 / %d 行业' % (len(SYMBOLS), len(stock_pool.get_sector_list())))
@@ -97,10 +94,7 @@ def preload_all_data(start, end):
 
 
 # =============================================================================
-# V19 回测引擎
 # =============================================================================
-
-class V19BacktestEngine:
 
     def __init__(self, data, start_cash=25000):
         self.data = data
@@ -110,7 +104,6 @@ class V19BacktestEngine:
         self.trades = []
         self.daily_values = []
 
-        # V19 执行器
         self.exec_engine = executor.TradeExecutor()
 
         if MARKET_INDEX in data:
@@ -150,7 +143,6 @@ class V19BacktestEngine:
         if bar_idx < config.DATA_COUNT:
             return
 
-        # V19.2: 清理过期冷却期
         self.exec_engine.cleanup_cooldowns(date_str)
 
         regime = self._detect_regime(bar_idx)
@@ -171,7 +163,6 @@ class V19BacktestEngine:
         for sym, price, vote, info in sells:
             if sym in self.positions:
                 self._execute_sell(sym, price, vote['reason'], date_str)
-                # V19.2: 记录卖出，启动冷却期
                 self.exec_engine.record_sell(sym, date_str)
 
         # 行业动量 → 模拟市场情绪 (软化映射)
@@ -340,7 +331,7 @@ class V19BacktestEngine:
 
         print()
         print('=' * 60)
-        print('  V20 六策略行业差异化回测结果摘要')
+        print('  V24 六策略行业差异化回测结果摘要')
         print('=' * 60)
         print('  初始资金:   %.0f' % initial)
         print('  最终净值:   %.0f' % final_value)
@@ -400,5 +391,4 @@ if __name__ == '__main__':
         print('[错误] 有效股票数据不足，退出')
         sys.exit(1)
 
-    engine = V19BacktestEngine(all_data, start_cash=config.BACKTEST_CASH)
     engine.run()
