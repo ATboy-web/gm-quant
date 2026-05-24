@@ -1,5 +1,4 @@
 """
-executor.py - V19 交易执行器
 
 从 main.py 抽离入场/出场核心逻辑，使主程序简洁。
 所有交易决策逻辑集中在此，main.py 只负责初始化和回调。
@@ -30,7 +29,6 @@ class TradeExecutor:
         # 缓存: {sector: [strategy instances]}，随 regime 更新
         self._strategy_cache = {}
         self._cache_regime = None
-        # V19.2: 冷却期 — 卖出后N天内不再买入同一股票
         self.cooldown_days = 1   # 只冷却1天
         self._sell_history = {}  # {symbol: sell_date_str}
         # V22: 连亏熔断
@@ -78,11 +76,9 @@ class TradeExecutor:
         return self._strategy_cache[sector]
 
     def record_sell(self, symbol, sell_date_str):
-        """V19.2: 记录卖出，启动冷却期。"""
         self._sell_history[symbol] = sell_date_str
 
     def cleanup_cooldowns(self, today_str):
-        """V19.2: 清理过期冷却期。"""
         from datetime import datetime as dt
         expired = []
         for sym, sell_date in self._sell_history.items():
