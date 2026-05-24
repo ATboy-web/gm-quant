@@ -1,5 +1,4 @@
 """
-fusion.py - 多策略投票融合引擎 (V18)
 
 将三个独立策略的信号汇总，通过投票机制产生最终决策。
 
@@ -8,7 +7,6 @@ fusion.py - 多策略投票融合引擎 (V18)
   2. 统计 BUY / SELL 票数
   3. 根据票数和市场状态决定最终操作
 
-决策矩阵 (V18 MR主导):
   BUY票数 | SELL票数 | 决策        | 仓位
   --------|---------|------------|------
   ≥4.0   | 0       | BUY        | 100% (MR+双确认)
@@ -119,7 +117,6 @@ def vote_exit(mr_exit, mom_exit, vp_exit, regime='range', owner_strategy=None):
     """
     对三策略的出场信号进行投票，决定是否卖出。
 
-    V18.1 出场规则:
       1. 归属策略喊 SELL → 直接卖（优先权）
       2. 任何止损/止盈信号 → 直接卖（安全阀，防止策略不匹配导致亏损扩大）
       3. 非归属策略的趋势/时间类出场 → 需要交叉验证（≥2个策略同意）
@@ -151,7 +148,6 @@ def vote_exit(mr_exit, mom_exit, vp_exit, regime='range', owner_strategy=None):
         conf = sig.get('confidence', 0.0)
 
         if action == 'SELL':
-            # V19.2: MOM 短暂破MA20 (conf≤0.5) 不参与交叉验证计票
             is_weak_trend = (conf <= 0.5 and '短暂' in reason)
             if not is_weak_trend:
                 sell_votes += weight
