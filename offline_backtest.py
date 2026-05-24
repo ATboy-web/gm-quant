@@ -1,4 +1,4 @@
-﻿"""
+"""
 offline_backtest.py - V20 离线回测脚本
 
 V20 改进:

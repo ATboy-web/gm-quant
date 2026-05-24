@@ -32,6 +32,9 @@ SECTOR_KEYWORDS = {
     '公用事业': ['电力', '核电', '水电', '电网', '公用', '长江电力'],
     '军工':     ['军工', '航天', '航空', '船舶', '国防'],
     '煤炭':     ['煤炭', '煤', '矿山', '神华', '陕煤'],
+    '房地产':   ['房地产', '地产', '楼盘', '万科', '保利', '房价', '楼市'],
+    '交通运输': ['航运', '铁路', '物流', '快递', '港口', '航空', '机场'],
+    '农业':     ['农业', '养殖', '猪肉', '饲料', '种业', '粮食', '牧原', '温氏'],
 }
 
 POS_WORDS = ['大涨','涨停','利好','突破','反弹','走强','领涨','政策支持','资金流入','业绩增长']
@@ -110,19 +113,93 @@ def crawl_eastmoney_sector():
         return []
 
 
+def crawl_xueqiu_hot():
+    """雪球热门讨论 (社区情绪)"""
+    try:
+        body = _fetch('https://xueqiu.com/statuses/hot/listV2.json?since_id=-1&size=30',
+                      headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                               'Referer': 'https://xueqiu.com/', 'Cookie': 'xq_a_token=anonymous'})
+        if not body: return []
+        data = json.loads(body.decode('utf-8'))
+        items = []
+        for item in data.get('items', [])[:30]:
+            text = item.get('text', '') or item.get('title', '')
+            text = re.sub(r'<[^>]+>', '', text)[:200]
+            if len(text) > 15:
+                items.append((text, '雪球'))
+        return items
+    except Exception:
+        return []
+
+
+def crawl_eastmoney_guba():
+    """东方财富股吧热门帖"""
+    try:
+        body = _fetch('https://guba.eastmoney.com/remenba.aspx?type=1',
+                      headers={'User-Agent': 'Mozilla/5.0'})
+        if not body: return []
+        html = body.decode('gbk', errors='replace')
+        items = []
+        titles = re.findall(r'<a[^>]*title="([^"]{10,80})"[^>]*>', html)
+        reads = re.findall(r'<cite>(\d+)</cite>', html)
+        for i, t in enumerate(titles[:30]):
+            hot = int(reads[i]) if i < len(reads) else 0
+            if hot > 1000:
+                items.append((t, '东财股吧'))
+        return items
+    except Exception:
+        return []
+
+
+def crawl_10jqka_hot():
+    """同花顺社区热门话题"""
+    try:
+        body = _fetch('https://t.10jqka.com.cn/circle/getHotList/',
+                      headers={'User-Agent': 'Mozilla/5.0', 'Referer': 'https://t.10jqka.com.cn/'})
+        if not body: return []
+        data = json.loads(body.decode('utf-8'))
+        items = []
+        for item in data.get('data', [])[:30]:
+            title = item.get('title', '') or item.get('content', '')
+            title = re.sub(r'<[^>]+>', '', title)[:150]
+            if len(title) > 12:
+                items.append((title, '同花顺'))
+        return items
+    except Exception:
+        return []
+
+
+def crawl_wallstreetcn():
+    """华尔街见闻快讯"""
+    try:
+        body = _fetch('https://api-one.wallstcn.com/apiv1/content/lives?limit=30',
+                      headers={'User-Agent': 'Mozilla/5.0'})
+        if not body: return []
+        data = json.loads(body.decode('utf-8'))
+        items = []
+        for item in data.get('data', {}).get('items', [])[:30]:
+            title = item.get('title', '') or item.get('content_text', '')
+            title = re.sub(r'<[^>]+>', '', title)[:200]
+            if len(title) > 15:
+                items.append((title, '华尔街见闻'))
+        return items
+    except Exception:
+        return []
+
+
 def crawl_parallel():
-    """并行抓取三大源"""
+    """并行抓取 7 大源 (新浪/财联社/东方财富/雪球/股吧/同花顺/华尔街见闻)"""
     results = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:
-        futures = {
-            ex.submit(crawl_sina_headlines): 'sina',
-            ex.submit(crawl_cls_telegraph): 'cls',
-            ex.submit(crawl_eastmoney_sector): 'em',
-        }
+    tasks = [
+        crawl_sina_headlines, crawl_cls_telegraph, crawl_eastmoney_sector,
+        crawl_xueqiu_hot, crawl_eastmoney_guba, crawl_10jqka_hot, crawl_wallstreetcn,
+    ]
+    names = ['sina', 'cls', 'em', 'xueqiu', 'guba', '10jqka', 'wallst']
+    with concurrent.futures.ThreadPoolExecutor(max_workers=7) as ex:
+        futures = {ex.submit(t): n for t, n in zip(tasks, names)}
         for future in concurrent.futures.as_completed(futures):
-            key = futures[future]
-            results[key] = future.result()
-    return results['sina'], results['cls'], results['em']
+            results[futures[future]] = future.result()
+    return tuple(results.get(n, []) for n in names)
 
 
 # === 保存与查询 ===
@@ -169,12 +246,16 @@ def run_full_crawl():
     date_str = datetime.now().strftime('%Y-%m-%d')
     t0 = time.time()
 
-    sina, cls_news, em = crawl_parallel()
+    sina, cls_news, em, xueqiu, guba, jqka, wallst = crawl_parallel()
     elapsed = time.time() - t0
-    print(f'[爬虫] {elapsed:.1f}s: 新浪{len(sina)} 财联社{len(cls_news)} 板块{len(em)}')
+    print(f'[爬虫] {elapsed:.1f}s: 新浪{len(sina)} 财联社{len(cls_news)} 板块{len(em)} 雪球{len(xueqiu)} 股吧{len(guba)} 同花顺{len(jqka)} 华尔街{len(wallst)}')
 
     all_news = [(t, s, _score(t)) for t, s in sina]
     all_news += [(t, s, _score(t)) for t, s in cls_news]
+    all_news += [(t, s, _score(t)) for t, s in xueqiu]
+    all_news += [(t, s, _score(t)) for t, s in guba]
+    all_news += [(t, s, _score(t)) for t, s in jqka]
+    all_news += [(t, s, _score(t)) for t, s in wallst]
     for name, pct in em:
         s = 0.5 if pct > 2 else (-0.5 if pct < -2 else 0)
         all_news.append((f'{name} {"涨" if pct>0 else "跌"}{abs(pct):.1f}%', '东方财富', s))
@@ -212,3 +293,69 @@ def get_sector_bias(sector, scores):
 
 def get_sector_freeze(sector, scores, threshold=-0.8):
     return scores.get(sector, 0.0) <= threshold
+
+
+# === 股票热度筛选 (爬虫数据 → 热门股排行) ===
+
+# 股票名称/代码映射 (从 stock_pool 自动提取)
+_stock_names = {}  # lazy init
+
+
+def _init_stock_names():
+    """从 stock_pool 提取股票简称关键词"""
+    global _stock_names
+    if _stock_names:
+        return
+    try:
+        import stock_pool
+        name_map = {
+            'SHSE.600036': ['招商银行'], 'SHSE.601318': ['中国平安'], 'SHSE.601166': ['兴业银行'],
+            'SHSE.600016': ['民生银行'], 'SHSE.601398': ['工商银行'], 'SHSE.601939': ['建设银行'],
+            'SHSE.601288': ['农业银行'], 'SHSE.601328': ['交通银行'], 'SHSE.600030': ['中信证券'],
+            'SHSE.601688': ['华泰证券'], 'SHSE.600887': ['伊利股份'], 'SZSE.000858': ['五粮液'],
+            'SHSE.603288': ['海天味业'], 'SZSE.000568': ['泸州老窖'], 'SHSE.600276': ['恒瑞医药'],
+            'SZSE.000538': ['云南白药'], 'SHSE.600436': ['片仔癀'], 'SZSE.002415': ['海康威视'],
+            'SZSE.002230': ['科大讯飞'], 'SZSE.000063': ['中兴通讯'], 'SHSE.601012': ['隆基绿能'],
+            'SHSE.600438': ['通威股份'], 'SHSE.600089': ['特变电工'], 'SHSE.600031': ['三一重工'],
+            'SZSE.000333': ['美的集团'], 'SZSE.000651': ['格力电器'], 'SHSE.601899': ['紫金矿业'],
+            'SHSE.603993': ['洛阳钼业'], 'SZSE.002594': ['比亚迪'], 'SHSE.600104': ['上汽集团'],
+            'SHSE.600309': ['万华化学'], 'SHSE.600900': ['长江电力'], 'SHSE.601985': ['中国核电'],
+            'SHSE.601088': ['中国神华'], 'SHSE.601225': ['陕西煤业'], 'SZSE.000002': ['万科'],
+            'SHSE.600048': ['保利发展'], 'SHSE.601919': ['中远海控'], 'SZSE.002714': ['牧原股份'],
+        }
+        _stock_names.update(name_map)
+        # Also add symbol->name for search
+        for sym in stock_pool.get_all_symbols():
+            code = sym.split('.')[1]
+            if sym not in _stock_names:
+                _stock_names[sym] = [code]
+    except Exception:
+        pass
+
+
+def get_stock_heat(all_news):
+    """
+    从爬虫新闻计算个股热度排行。
+    返回: [(symbol, heat_score, sentiment_score), ...] sorted by heat desc
+    """
+    _init_stock_names()
+    heat = defaultdict(lambda: [0, 0.0])  # [mention_count, sentiment_sum]
+
+    for text, src, score in all_news:
+        for sym, names in _stock_names.items():
+            for name in names:
+                if name in text:
+                    heat[sym][0] += 1
+                    heat[sym][1] += score
+                    break
+
+    # Calculate combined score
+    result = []
+    for sym, (cnt, sent) in heat.items():
+        avg_sent = sent / cnt if cnt > 0 else 0
+        # Heat = mentions * 0.6 + sentiment * 0.4
+        combined = cnt * 0.6 + avg_sent * 0.4
+        result.append((sym, round(combined, 2), round(avg_sent, 2), cnt))
+
+    result.sort(key=lambda x: -x[1])
+    return result

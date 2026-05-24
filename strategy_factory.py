@@ -1,4 +1,4 @@
-﻿"""
+"""
 strategy_factory.py - V23 策略工厂 (6策略: MR/MOM/VP/BK/DV/RT)
 """
 
