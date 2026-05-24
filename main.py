@@ -73,6 +73,22 @@ print('  股票池: %d 只 / %d 行业'
 print('=' * 60)
 sector_config.print_summary()
 
+# ===== AI辅助开关 (终端启动时选择) =====
+_ai_choice = ''
+try:
+    _ai_choice = input('\n[AI辅助] 1=开启  2=关闭 (默认2): ').strip()
+except Exception:
+    pass
+if _ai_choice == '1':
+    config.AI_ENABLED = True
+    print('  AI辅助: %s | 供应商:%s | 模型:%s' % (
+        '在线' if config.AI_API_KEY else '离线(无Key)',
+        config.AI_PROVIDER, config.AI_MODEL))
+else:
+    config.AI_ENABLED = False
+    print('  AI辅助: 已关闭')
+print()
+
 
 # =============================================================================
 # init()
