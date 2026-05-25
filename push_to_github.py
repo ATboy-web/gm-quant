@@ -7,7 +7,7 @@ import base64
 import json
 import urllib.request
 
-GITHUB_TOKEN = "YOUR_PAT_HERE"  # 替换为你的 GitHub PAT (本地运行时需填写)
+GITHUB_TOKEN = "YOUR_GITHUB_PAT_HERE"  # GitHub PAT (永久有效, 2026-05-25)
 REPO_OWNER = "ATboy-web"
 REPO_NAME = "gm-quant"
 BRANCH = "main"
@@ -43,6 +43,10 @@ FILES_TO_PUSH = [
     # 心跳 & 工具
     "trace.py",
     "push_to_github.py",
+    # V29.4: 可视化
+    "visualizer.py",
+    "README.md",
+    "CHANGELOG.md",
 ]
 
 def push_file(filepath):
@@ -104,3 +108,4 @@ if __name__ == "__main__":
         if push_file(f):
             ok += 1
     print(f"\n  完成: {ok}/{len(FILES_TO_PUSH)} 个文件已推送")
+
