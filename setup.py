@@ -1,9 +1,11 @@
 """
-gm-quant: 鎺橀噾閲忓寲鍏瓥鐣ヨ涓氬樊寮傚寲铻嶅悎妗嗘灦
+gm-quant: 掘金量化六策略行业差异化融合框架
 
-鍩轰簬鎺橀噾閲忓寲 SDK 鐨?A 鑲″绛栫暐铻嶅悎浜ゆ槗绯荤粺銆?瑕嗙洊 6 涓瓥鐣ャ€?2 涓涓氥€?6 鍙偂绁ㄣ€?
-瀹夎:
-    pip install gm -U        # 鎺橀噾 SDK (蹇呴渶)
+基于掘金量化 SDK 的 A 股多策略融合交易系统。
+覆盖 6 个策略、12 个行业、96 只股票。
+
+安装:
+    pip install gm -U        # 掘金 SDK (必需)
     git clone https://github.com/ATboy-web/gm-quant.git
     cd gm-quant
     python offline_backtest.py
@@ -43,7 +45,7 @@ setup(
         "matplotlib>=3.5",
     ],
     extras_require={
-        "gm": ["gm>=3.0.183"],    # 鎺橀噾閲忓寲SDK (闇€鍗曠嫭瀹夎)
+        "gm": ["gm>=3.0.183"],    # 掘金量化SDK (需单独安装)
         "dev": ["pytest", "flake8"],
     },
     py_modules=[
