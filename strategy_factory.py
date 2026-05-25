@@ -1,5 +1,5 @@
 """
-strategy_factory.py - V23 策略工厂 (6策略: MR/MOM/VP/BK/DV/RT)
+strategy_factory.py - V29 策略工厂 (6策略: MR/MOM/VP/BK/DV/RT)
 """
 
 import strategy_mr
