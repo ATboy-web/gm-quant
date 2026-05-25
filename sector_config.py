@@ -151,8 +151,7 @@ SECTOR_CONFIGS = {
         'time_stop_days': 15,       # V19.1: 12→15
 
 
-        'entry_threshold': 0.30,
-
+        'entry_threshold': 0.35,   # V26: 0.30→0.35
 
         'vol_surge_min': 1.1,
 
@@ -232,8 +231,7 @@ SECTOR_CONFIGS = {
         'time_stop_days': 18,       # V19.1: 15→18
 
 
-        'entry_threshold': 0.30,
-
+        'entry_threshold': 0.35,   # V26: 0.30→0.35
 
         'vol_surge_min': 1.1,
 
@@ -310,8 +308,7 @@ SECTOR_CONFIGS = {
         'time_stop_days': 18,       # V19.1: 15→18
 
 
-        'entry_threshold': 0.35,
-
+        'entry_threshold': 0.40,   # V26: 0.35→0.40
 
         'vol_surge_min': 1.2,
 
@@ -391,8 +388,7 @@ SECTOR_CONFIGS = {
         'time_stop_days': 15,       # V19.1: 10→15
 
 
-        'entry_threshold': 0.35,
-
+        'entry_threshold': 0.40,   # V26: 0.35→0.40
 
         'vol_surge_min': 1.3,
 
@@ -472,8 +468,7 @@ SECTOR_CONFIGS = {
         'time_stop_days': 22,    # 给强周期更多修复时间
 
 
-        'entry_threshold': 0.35,
-
+        'entry_threshold': 0.40,   # V26: 0.35→0.40
 
         'vol_surge_min': 1.3,
 
@@ -556,8 +551,7 @@ SECTOR_CONFIGS = {
         'time_stop_days': 18,       # V19.1: 15→18
 
 
-        'entry_threshold': 0.33,
-
+        'entry_threshold': 0.38,   # V26: 0.33→0.38
 
         'vol_surge_min': 1.2,
 
@@ -637,8 +631,7 @@ SECTOR_CONFIGS = {
         'time_stop_days': 15,       # V19.1: 12→15
 
 
-        'entry_threshold': 0.33,
-
+        'entry_threshold': 0.38,   # V26: 0.33→0.38
 
         'vol_surge_min': 1.3,
 
@@ -715,8 +708,7 @@ SECTOR_CONFIGS = {
         'time_stop_days': 15,       # V19.1: 12→15
 
 
-        'entry_threshold': 0.33,
-
+        'entry_threshold': 0.38,   # V26: 0.33→0.38
 
         'vol_surge_min': 1.2,
 
@@ -793,8 +785,7 @@ SECTOR_CONFIGS = {
         'time_stop_days': 18,       # V19.1: 15→18
 
 
-        'entry_threshold': 0.33,
-
+        'entry_threshold': 0.38,   # V26: 0.33→0.38
 
         'vol_surge_min': 1.2,
 
@@ -877,8 +868,7 @@ SECTOR_CONFIGS = {
         'time_stop_days': 25,
 
 
-        'entry_threshold': 0.25,
-
+        'entry_threshold': 0.30,   # V26: 0.25→0.30
 
         'vol_surge_min': 1.0,
 
@@ -958,8 +948,7 @@ SECTOR_CONFIGS = {
         'time_stop_days': 15,       # V19.1: 12→15
 
 
-        'entry_threshold': 0.35,
-
+        'entry_threshold': 0.40,   # V26: 0.35→0.40
 
         'vol_surge_min': 1.3,
 
@@ -1045,8 +1034,7 @@ SECTOR_CONFIGS = {
         'time_stop_days': 18,       # V19.1: 15→18
 
 
-        'entry_threshold': 0.33,
-
+        'entry_threshold': 0.38,   # V26: 0.33→0.38
 
         'vol_surge_min': 1.2,
 
@@ -1129,8 +1117,7 @@ DEFAULT_CONFIG = {
     'time_stop_days': 18,
 
 
-    'entry_threshold': 0.35,
-
+    'entry_threshold': 0.40,
 
     'vol_surge_min': 1.2,
 
@@ -1168,7 +1155,7 @@ REGIME_OVERRIDE = {
         'rsi_buy_adjust': 2,
 
 
-        'entry_threshold_adjust': -0.05,
+        'entry_threshold_adjust': -0.03,   # V26: -0.05→-0.03, 收紧牛市门槛
 
 
     },
@@ -1198,7 +1185,7 @@ REGIME_OVERRIDE = {
         'rsi_buy_adjust': -3,
 
 
-        'entry_threshold_adjust': 0.10,
+        'entry_threshold_adjust': 0.08,    # V26: 0.10→0.08, 熊市略放松
 
 
     },
