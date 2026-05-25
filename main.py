@@ -94,12 +94,15 @@ def init(context):
     # GM订阅限制50只, 前49只+大盘指数=50
     _all = list(SYMBOLS)[:49] + [MARKET_INDEX]
     subscribe(symbols=_all, frequency='1d', count=config.DATA_COUNT)
-    # 修正SYMBOLS为实际订阅的 (保持主逻辑不变)
-    context.SYMBOLS = _all[:-1]  # 去掉大盘指数
-    schedule(schedule_func=on_bar, date_rule='1d', time_rule='14:50:00')
+    context.SYMBOLS = _all[:-1]
+
+    # 回测: schedule处理全部历史日 | 仿真: 每个交易日15:05触发(收盘后)
+    _time = '15:05:00' if not _is_bt else '14:50:00'
+    schedule(schedule_func=on_bar, date_rule='1d', time_rule=_time)
+
     context.on_backtest_finished = on_backtest_finished
     context.on_error = on_error
-    print('[init] 完成, 订阅%d只, 等待bar回调...' % len(_all))
+    print('[init] 完成, 订阅%d只, 模式=%s, time=%s' % (len(_all), '回测' if _is_bt else '仿真', _time))
 
 
 # =============================================================================
@@ -145,6 +148,23 @@ def _on_bar_impl(context, bars=None):
 
     context.data_cache = {}
     context._today = today
+
+    # 仿真模式: 用 context.data() 主动拉数据(bar可能为空)
+    _is_sim = not getattr(context, 'mode_flag', True)
+    for sym in getattr(context, 'SYMBOLS', []):
+        try:
+            _df = context.data(symbol=sym, frequency='1d', count=config.DATA_COUNT)
+            if _df is not None and len(_df) > 0:
+                context.data_cache[sym] = _df
+        except Exception:
+            pass
+    # 大盘指数
+    try:
+        _idx = context.data(symbol=MARKET_INDEX, frequency='1d', count=config.DATA_COUNT)
+        if _idx is not None and len(_idx) > 0:
+            context.data_cache[MARKET_INDEX] = _idx
+    except Exception:
+        pass
 
     # Step 1: 预加载数据
     loaded = _preload_data(context)
