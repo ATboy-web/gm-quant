@@ -7,8 +7,7 @@ import base64
 import json
 import urllib.request
 
-GITHUB_TOKEN = "YOUR_GITHUB_PAT_HERE"  # 替换为你的 GitHub Personal Access Token (需要 repo 权限)
-# 创建 Token: https://github.com/settings/tokens → Generate new token (classic) → 勾选 repo
+GITHUB_TOKEN = "YOUR_PAT_HERE"  # 替换为你的 GitHub PAT (本地运行时需填写)
 REPO_OWNER = "ATboy-web"
 REPO_NAME = "gm-quant"
 BRANCH = "main"
@@ -73,7 +72,7 @@ def push_file(filepath):
 
     # 更新文件
     body = json.dumps({
-        "message": f"V25: 宽松方案 + 仿真账户配置 + 日志系统 + SDK调研修复 - {filepath}",
+        "message": f"V26: 全面优化 — 仓位利用率+入场收紧+交易频率限制+RT收紧 - {filepath}",
         "content": encoded,
         "branch": BRANCH,
     } | ({"sha": sha} if sha else {}))
@@ -98,7 +97,7 @@ def push_file(filepath):
 
 if __name__ == "__main__":
     print("=" * 50)
-    print("  GitHub Push — V25 全量同步")
+    print("  GitHub Push — V26 全面优化")
     print("=" * 50)
     ok = 0
     for f in FILES_TO_PUSH:
