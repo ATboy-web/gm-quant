@@ -96,12 +96,19 @@ def init(context):
     subscribe(symbols=_all, frequency='1d', count=config.DATA_COUNT)
     context.SYMBOLS = _all[:-1]
 
-    # 统一14:50(收盘前10分钟, 模拟交易时段内)
-    schedule(schedule_func=on_bar, date_rule='1d', time_rule='14:50:00')
+    if not _is_bt:
+        # 仿真: 每个交易小时判断一次 (用前一天日线数据)
+        for t in ['09:35:00','10:30:00','11:00:00','13:05:00','14:00:00','14:50:00']:
+            schedule(schedule_func=on_bar, date_rule='1d', time_rule=t)
+    else:
+        # 回测: 一次性处理全部历史
+        schedule(schedule_func=on_bar, date_rule='1d', time_rule='14:50:00')
 
     context.on_backtest_finished = on_backtest_finished
     context.on_error = on_error
-    print('[init] 完成, 订阅%d只, 模式=%s, 交易时间=14:50' % (len(_all), '回测' if _is_bt else '仿真'))
+    print('[init] 完成, 订阅%d只, 模式=%s, %s' % (
+        len(_all), '回测' if _is_bt else '仿真',
+        '每日6次判断' if not _is_bt else '一次性跑历史'))
 
 
 # =============================================================================
