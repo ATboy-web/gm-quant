@@ -311,6 +311,7 @@ def _do_buys(context, candidates, max_pos):
         context.sector_pos[sector] = sym
         taken_sectors.add(sector)
         taken_count += 1
+        exec_engine.record_buy(sym)  # V26: 追踪交易次数
 
         rsi_str = ' RSI=%.0f' % c['rsi'] if c.get('rsi') else ''
         log.info('[买入] %s | %s(%s) | %s | 策略:%s | %.2f×%d%s',
