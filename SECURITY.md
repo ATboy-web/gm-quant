@@ -13,11 +13,15 @@
 
 **Do NOT open a public issue** for security vulnerabilities.
 
-Instead, please report them privately:
+Instead, use GitHub's private Security Advisory feature:
 
-1. **Email**: Create a private security advisory through GitHub's Security tab
-2. **Response time**: We aim to respond within 48 hours
-3. **Disclosure**: We follow responsible disclosure 鈥?we'll publish after a fix is released
+馃憠 **[Report a Vulnerability](https://github.com/ATboy-web/gm-quant/security/advisories/new)**
+
+1. Go to **Security 鈫?Advisories 鈫?Report a vulnerability**
+2. Describe the vulnerability in detail (steps to reproduce, affected versions)
+3. **Response time**: We aim to acknowledge within 48 hours and fix within 7 days
+4. **Disclosure**: We follow responsible disclosure 鈥?the advisory will be published after a fix is released
+5. **Credit**: We're happy to credit researchers in the advisory (opt-in)
 
 ## Security Best Practices for Contributors
 
@@ -35,9 +39,16 @@ The repository has Secret Scanning enabled. Any commit containing:
 will be automatically blocked by GitHub's push protection.
 
 ### Dependency Security
-- GM SDk `gm` package is the only external dependency
-- Pin versions: `gm >= 3.0.183`
-- Review GM SDK changelog before upgrading
+- **GM SDK** (`gm >= 3.0.183`) is the only external runtime dependency for backtesting
+- `numpy`, `pandas`, `matplotlib` are pinned in `setup.py`
+- Review [GM SDK changelog](https://www.myquant.cn/docs) before upgrading
+- Run `pip list --outdated` periodically to check for vulnerable packages
+
+### Token & Credential Hygiene
+- The repo uses `YOUR_GITHUB_PAT_HERE` placeholder in `push_to_github.py`
+- `config.py` uses a placeholder `GM_TOKEN = ''` 鈥?fill in locally, never commit
+- Any PR that accidentally includes a real token will be blocked by Secret Scanning
+- If you've accidentally exposed a token, **revoke it immediately** at [GitHub Tokens](https://github.com/settings/tokens)
 
 ### Code Review
 - All PRs require at least one review
