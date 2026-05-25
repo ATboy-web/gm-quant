@@ -171,7 +171,8 @@ class V19BacktestEngine:
         # 行业统计
         self.sector_stats = {}
 
-    def run(self):
+    def run(self, progress_callback=None):
+        """运行回测。V29.4: 支持 progress_callback 用于实时可视化。"""
         log.info('[引擎] 开始回测 (V29 优化)...')
         for i, date_str in enumerate(self.bar_dates):
             self._daily_bar(date_str, i)
@@ -183,6 +184,9 @@ class V19BacktestEngine:
                 ret = (total_val - self.initial_cash) / self.initial_cash * 100
                 log.info('  [%s] 进度 %d/%d | 净值 %.0f (%+.1f%%) | 持仓 %d',
                          date_str, i + 1, len(self.bar_dates), total_val, ret, pos_count)
+                # V29.4: 更新可视化加载窗口
+                if progress_callback:
+                    progress_callback(i + 1, len(self.bar_dates), total_val, ret, pos_count)
 
         self._print_summary()
 
@@ -469,11 +473,23 @@ class V19BacktestEngine:
 # 主程序
 # =============================================================================
 
-if __name__ == '__main__':
-    # V29.3: 注释掉可视化交互提示，避免后台运行时阻塞
-    # visualizer.prompt_visual()
-    # 如需可视化，手动取消注释上一行，或在终端直接运行
-    print('  [跳过] 可视化窗口（仅命令行输出）\n')
+def run_backtest(enable_visual=False, skip_prompt=False):
+    """
+    运行离线回测，可选择打开可视化窗口。
+    
+    V29.4: 抽取为独立函数，无论从命令行 python offline_backtest.py 还是
+    掘金终端 IDE 的回测按钮调用，都能正确触发可视化。
+    
+    用法:
+        python offline_backtest.py              # 交互式
+        python offline_backtest.py --visual     # 跳过交互，直接打开可视化
+        python offline_backtest.py --no-visual  # 跳过交互，不打开可视化
+    """
+    global _engine_ref
+    if skip_prompt:
+        visualizer.VISUAL_ENABLED = enable_visual
+    else:
+        visualizer.prompt_visual()
 
     start_date = config.BACKTEST_START[:10]
     end_date   = config.BACKTEST_END[:10]
@@ -482,20 +498,54 @@ if __name__ == '__main__':
 
     if MARKET_INDEX not in all_data:
         log.error('[错误] 无法获取大盘指数数据，退出')
-        sys.exit(1)
+        return
 
     if len(all_data) < 5:
         log.error('[错误] 有效股票数据不足，退出')
-        sys.exit(1)
+        return
 
     _t0 = time.time()
     engine = V19BacktestEngine(all_data, start_cash=config.BACKTEST_CASH)
-    engine.run()
+
+    # V29.4: 回测前立即弹出加载窗口
+    if visualizer.VISUAL_ENABLED:
+        title = f'gm-quant V29.4 | {start_date[:10]} ~ {end_date[:10]}'
+        visualizer.open_loading_window(title)
+
+        def _update_vis(step, total, nav, ret_pct, positions):
+            visualizer.update_loading(
+                f'回测进行中... {step}/{total}\n'
+                f'净值: {nav:,.0f} ({ret_pct:+.1f}%) | 持仓: {positions}只'
+            )
+
+        engine.run(progress_callback=_update_vis)
+    else:
+        engine.run()
+
     _elapsed = time.time() - _t0
 
     log.info('[耗时] 回测总耗时: %.1f 分钟 (%.1f 秒)', _elapsed / 60, _elapsed)
 
-    # V27: 转换为可视化数据并启动
+    # V29.4: 关闭加载窗口，打开完整可视化
     if visualizer.VISUAL_ENABLED:
+        visualizer.update_loading('回测完成，加载可视化...')
+        print('[Vis] 数据转换中...', flush=True)
         viz_data = visualizer.from_backtest_engine(engine)
+        print(f'[Vis] 加载 {len(viz_data.trades)} 笔交易, {len(viz_data.daily_values)} 日净值', flush=True)
+        visualizer.close_loading_window()
         visualizer.launch_visualizer(viz_data, _elapsed)
+
+    _engine_ref = engine
+    return engine
+
+
+_engine_ref = None  # V29.4: 方便外部获取引擎引用
+
+
+if __name__ == '__main__':
+    if '--visual' in sys.argv:
+        run_backtest(enable_visual=True, skip_prompt=True)
+    elif '--no-visual' in sys.argv:
+        run_backtest(enable_visual=False, skip_prompt=True)
+    else:
+        run_backtest()
