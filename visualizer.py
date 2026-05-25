@@ -790,13 +790,13 @@ class BacktestVisualizer:
     def _update_clock(self):
         """实时时钟"""
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        self.clock_lbl.config(text=f'🕐 {now}')
+        self.clock_lbl.config(text=f'[Clock] {now}')
 
         # 耗时显示
         if self.data.total_elapsed > 0:
             mins = int(self.data.total_elapsed // 60)
             secs = int(self.data.total_elapsed % 60)
-            self.elapsed_lbl.config(text=f'⏱ 回测耗时: {mins}分{secs}秒')
+            self.elapsed_lbl.config(text=f'[Time] 回测耗时: {mins}分{secs}秒')
 
         self.root.after(1000, self._update_clock)
 
@@ -976,37 +976,117 @@ def from_csv_files(nav_csv: str, trade_csv: str) -> BacktestData:
 # 终端入口
 # =============================================================================
 
-VISUAL_ENABLED = False   # 全局开关
+VISUAL_ENABLED = True   # V29.4: 默认启用可视化（GM终端无stdin也生效）
+
+# =============================================================================
+# V29.4: 实时加载窗口 — 回测前即弹出，显示进度
+# =============================================================================
+
+_loading_root = None
+_loading_label = None
+_loading_title_text = ''
+
+
+def open_loading_window(title_text='gm-quant'):
+    """回测开始前立即弹出轻量窗口，显示加载状态。"""
+    global _loading_root, _loading_label, _loading_title_text
+    _loading_title_text = title_text
+
+    try:
+        _loading_root = tk.Tk()
+    except Exception:
+        _loading_root = None
+        return
+
+    _loading_root.title(title_text)
+    _loading_root.configure(bg=COLORS['bg'])
+    _loading_root.protocol("WM_DELETE_WINDOW", lambda: None)  # 禁止关闭
+
+    sw = _loading_root.winfo_screenwidth()
+    sh = _loading_root.winfo_screenheight()
+    w, h = 520, 320
+    _loading_root.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
+
+    # 标题
+    tk.Label(_loading_root, text=title_text,
+             font=('Microsoft YaHei', 16, 'bold'),
+             fg=COLORS['highlight'], bg=COLORS['bg']).pack(pady=(50, 10))
+
+    # 副标题
+    tk.Label(_loading_root, text='六策略行业差异化回测框架',
+             font=('Microsoft YaHei', 10),
+             fg=COLORS['text_dim'], bg=COLORS['bg']).pack()
+
+    # 进度标签
+    _loading_label = tk.Label(_loading_root, text='初始化...',
+                              font=('Microsoft YaHei', 12),
+                              fg=COLORS['text'], bg=COLORS['bg'],
+                              wraplength=480, justify='center')
+    _loading_label.pack(pady=(30, 10))
+
+    # 进度条
+    try:
+        style = ttk.Style()
+        style.configure('Load.Horizontal.TProgressbar',
+                        background=COLORS['highlight'],
+                        troughcolor=COLORS['panel_bg'])
+        _progress_bar = ttk.Progressbar(_loading_root, mode='indeterminate',
+                                        length=400, style='Load.Horizontal.TProgressbar')
+        _progress_bar.pack(pady=(10, 30))
+        _progress_bar.start(10)
+    except Exception:
+        pass
+
+    _loading_root.update()
+
+
+def update_loading(text):
+    """回测引擎调用 -- 更新加载文本。"""
+    global _loading_root, _loading_label
+    if _loading_root and _loading_label:
+        try:
+            _loading_label.config(text=text)
+            _loading_root.update()
+        except Exception:
+            pass
+
+
+def close_loading_window():
+    """回测完成后关闭加载窗口，准备打开完整可视化。"""
+    global _loading_root, _loading_label
+    if _loading_root:
+        try:
+            _loading_root.destroy()
+        except Exception:
+            pass
+        _loading_root = None
+        _loading_label = None
 
 
 def prompt_visual():
-    """终端交互: 是否打开可视化窗口
+    """终端交互: 是否打开可视化窗口。
 
-    V29.3: 改为非交互 — 检测 stdin 是否为 tty，
-    非 tty（管道/后台/重定向）时默认跳过，不阻塞。
-    如需可视化，在回测脚本中直接设置 VISUAL_ENABLED = True。
+    V29.4: 移除 isatty() 检测 — GM终端IDE中 stdin 可能不是tty但支持input()。
+    改用 try/except EOFError 兜底，非交互环境自动跳过。
     """
     global VISUAL_ENABLED
     print()
     print('=' * 50)
-    print('  📊 可视化窗口')
+    print('  [Vis] 可视化窗口')
     print('  1 = 打开可视化窗口 (GUI)')
     print('  2 = 跳过 (仅命令行输出)')
     print('=' * 50)
     try:
-        import sys
-        if not sys.stdin.isatty():
-            print('  ⏭ 非交互环境，仅命令行输出')
-            print()
-            return
         choice = input('  请选择 [1/2] (默认=2): ').strip()
         if choice == '1':
             VISUAL_ENABLED = True
-            print('  ✅ 回测完成后将打开可视化窗口')
+            print('  [OK] 回测完成后将打开可视化窗口')
         else:
-            print('  ⏭ 仅命令行输出')
-    except (EOFError, KeyboardInterrupt):
-        print('  ⏭ 非交互环境，仅命令行输出')
+            VISUAL_ENABLED = False
+            print('  [Skip] 仅命令行输出')
+    except (EOFError, OSError, KeyboardInterrupt):
+        # 非交互环境 (后台/管道/重定向) → 默认跳过
+        print('  [Skip] 非交互环境，仅命令行输出')
     print()
 
 
@@ -1018,9 +1098,14 @@ def launch_visualizer(data: BacktestData, elapsed_seconds: float = 0):
     data.total_elapsed = elapsed_seconds
     data.initial_cash = BACKTEST_CASH
 
-    print('\n🎨 正在启动可视化窗口...')
-    viz = BacktestVisualizer(data, title=f'量化回测可视化 V27 — {BACKTEST_START[:10]}~{BACKTEST_END[:10]}')
-    viz.run()
+    print('\n[Vis] 正在启动可视化窗口...')
+    try:
+        viz = BacktestVisualizer(data, title=f'gm-quant V29.4 | {BACKTEST_START[:10]} ~ {BACKTEST_END[:10]}')
+        viz.run()
+    except Exception as e:
+        print(f'[Vis] 启动失败: {e}')
+        import traceback
+        traceback.print_exc()
 
 
 # =============================================================================
