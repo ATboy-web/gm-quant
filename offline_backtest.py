@@ -1,5 +1,36 @@
-﻿"""
-offline_backtest.py - V20 离线回测脚本
+"""
+offline_backtest.py - V29.4 离线回测脚本
+
+V29.4 改进（全策略激活 + 策略配额制）:
+  根因: sector_config.py 未同步 → MR/BK/DV/RT 未启用 → VP 垄断
+  修复: 全面同步所有 .py 文件 + executor 策略配额制 (每策略≤2只)
+  config: RSI_BUY 29→33, ENTRY_THRESHOLD 0.42→0.36 (适配2024-2026牛市)
+  VP: 保留 V29.2 趋势硬门移除
+
+V29.2 改进（修复多策略竞争中的单策略歧视）:
+  executor: 置信度改用 max(confidences)×(1+共识加成), 不再用 avg
+            仓位比例下限提升: 双确认0.60→0.75, 单0.40→0.55
+  VP: 移除 V29.1 趋势硬门(单策略测试证实有害 +8.29%→+0.75%)
+  根因: VP独立运行 +8.29%, 多策略 -27.7%, 差距来自投票机制而非策略逻辑
+
+V29 改进（MOM/DV 策略优化）:
+  MOM: 入场门槛0.35→0.55, 量能硬门1.1→1.3, RSI下限45, 均线分离>1.5%
+  DV: 低位 AND(原OR), 60d<0%, 20d<-4%, RSI 33-52, 门槛0.72, 价<MA60
+  MOM权重: 8行业禁用, 4行业降权40-60%, BK补偿提权
+  DV权重: 全行业降权~30%
+  1. 入场适中: ENTRY_THRESHOLD 0.42, RSI_BUY 29
+  2. 止损适中: ATR_STOP_MULT 1.4, STOP_LOSS_CAP 0.07
+  3. 仓位适中: POSITION_PCT 0.14, MAX_TRADES 10
+  4. 熔断回退: 连亏3笔/冷却5天, cooldown 2天
+  5. 各行业 entry_threshold 降低 ~0.02
+  6. Bug修复: record_buy 缺失(MAX_TRADES失效), 熔断状态持久化修复
+
+V27 改进:
+  1. 收紧参数: RSI买入28, 入场阈值0.45, 止损1.3倍ATR/6%硬止损
+  2. 延长冷却期: 1天→3天, 减少Whipsaw
+  3. 提高买入门槛: 投票≥0.8(原0.5), 减少单策略弱信号
+  4. 降低交易频率: 单股最多8次(原12), 连亏2笔熔断
+  5. 性能优化: 延迟构建data_cache, 行业动量缓存化, 减少切片
 
 V20 改进:
   1. 新增反转确认策略(RT)
@@ -24,6 +55,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import numpy as np
 import pandas as pd
+import time
 from datetime import datetime, timedelta
 from gm.api import *
 
@@ -42,6 +74,7 @@ import strategy_breakout
 import strategy_dividend
 import strategy_reversal
 import fusion
+import visualizer
 
 # =============================================================================
 # 全局设置
@@ -57,7 +90,7 @@ logger.setup_logger(name='offline_backtest')
 log = logger.log
 
 log.info('=' * 56)
-log.info('  V20 离线回测 — 六策略行业差异化融合框架')
+log.info('  V28 \u79bb\u7ebf\u56de\u6d4b \u2014 \u516d\u7b56\u7565\u884c\u4e1a\u5dee\u5f02\u5316\u878d\u5408\u6846\u67b6')
 log.info('  策略: MR + MOM + VP + BK + DV + RT')
 log.info('  股票池: %d 只 / %d 行业', len(SYMBOLS), len(stock_pool.get_sector_list()))
 log.info('=' * 56)
@@ -122,6 +155,10 @@ class V19BacktestEngine:
         log.info('[引擎] 交易日数: %d | 初始资金: %.0f',
                  len(self.bar_dates), start_cash)
 
+        # V27: 性能优化 — 预计算每个bar_idx的slice边界，避免重复iloc
+        self._slices_cache = {}
+        self._sector_momentum_cache = {}
+
         # 策略统计
         self.strategy_stats = {
             'MR':  {'wins': 0, 'total': 0, 'pnl': 0.0},
@@ -135,7 +172,7 @@ class V19BacktestEngine:
         self.sector_stats = {}
 
     def run(self):
-        log.info('[引擎] 开始回测...')
+        log.info('[引擎] 开始回测 (V29 优化)...')
         for i, date_str in enumerate(self.bar_dates):
             self._daily_bar(date_str, i)
             self._record_daily_value(date_str, i)
@@ -159,10 +196,10 @@ class V19BacktestEngine:
         regime = self._detect_regime(bar_idx)
         regime_cfg = config.REGIME_PARAMS.get(regime, config.REGIME_PARAMS['range'])
 
-        # 出场检查（使用 executor）
+        # V27: 只构建持仓数据用于出场检查
         pos_info_copy = {sym: dict(pos) for sym, pos in self.positions.items()}
         data_cache = {}
-        for sym in list(self.positions.keys()) + SYMBOLS:
+        for sym in self.positions:
             df = self._get_df_slice(sym, bar_idx)
             if df is not None:
                 data_cache[sym] = df
@@ -174,23 +211,29 @@ class V19BacktestEngine:
         for sym, price, vote, info in sells:
             if sym in self.positions:
                 self._execute_sell(sym, price, vote['reason'], date_str)
-                # V19.2: 记录卖出，启动冷却期
                 self.exec_engine.record_sell(sym, date_str)
 
-        # 行业动量 → 模拟市场情绪 (软化映射)
-        sector_momentum = self._calc_sector_momentum(bar_idx)
+        # 行业动量 (V27: 缓存化)
+        sector_momentum = self._calc_sector_momentum_cached(bar_idx)
         sentiment = {}
         for sec, mom in sector_momentum.items():
-            sentiment[sec] = max(-1.0, min(1.0, mom * 5))  # 5%动量=+1, -5%=-1
+            sentiment[sec] = max(-1.0, min(1.0, mom * 5))
         self.exec_engine._sentiment = sentiment
 
-        # 入场
+        # 入场: 检查是否还有空间
         max_pos = regime_cfg['max_positions']
-        occupied = set(p.get('sector') for p in self.positions.values())
         if len(self.positions) < max_pos:
+            # V27: 补充构建候选股数据
+            for sym in SYMBOLS:
+                if sym not in data_cache:
+                    df = self._get_df_slice(sym, bar_idx)
+                    if df is not None:
+                        data_cache[sym] = df
+
+            occupied = set(p.get('sector') for p in self.positions.values())
             candidates = self.exec_engine.find_buy_candidates(
                 SYMBOLS, occupied, self.positions,
-                data_cache, sector_momentum, regime
+                data_cache, sector_momentum, regime, today_str=date_str
             )
             self._do_buys(candidates, max_pos, date_str)
 
@@ -229,10 +272,21 @@ class V19BacktestEngine:
             taken_sectors.add(sector)
             taken_count += 1
 
+            # V28: 追踪单只股票交易次数（V27遗漏，导致MAX_TRADES_PER_SYMBOL在离线回测中失效）
+            self.exec_engine.record_buy(sym)
+
             rsi_str = ' RSI=%.0f' % c['rsi'] if c.get('rsi') else ''
             log.info('[买入] %s | %s | %s | 策略:%s | %.2f×%d%s',
                      date_str, sym, c['reason'],
                      c['best_strategy'], price, qty, rsi_str)
+
+            # V27: 记录买入交易
+            self.trades.append({
+                'date': date_str, 'symbol': sym, 'side': 'BUY',
+                'price': price, 'vol': qty, 'pnl_pct': 0,
+                'reason': c['reason'], 'sector': sector,
+                'strategy': c['best_strategy'],
+            })
 
     def _get_df_slice(self, symbol, bar_idx):
         if symbol not in self.data:
@@ -258,9 +312,21 @@ class V19BacktestEngine:
             return
         pos = self.positions[sym]
         vol = pos['vol']
-        pnl_pct = (price - pos['cost']) / pos['cost'] * 100
+        cost_price = pos['cost']
+        pnl_pct = (price - cost_price) / cost_price * 100
         sector = pos.get('sector', '未知')
         strat = pos.get('strategy', '?')
+        entry_date = pos.get('entry_date', '')
+
+        # 算持仓天数
+        hold_days = 0
+        if entry_date:
+            try:
+                from datetime import datetime as dt
+                hold_days = (dt.strptime(date_str, '%Y-%m-%d') -
+                             dt.strptime(entry_date, '%Y-%m-%d')).days
+            except Exception:
+                pass
 
         self.cash += price * vol
 
@@ -268,6 +334,8 @@ class V19BacktestEngine:
             'date': date_str, 'symbol': sym, 'side': 'SELL',
             'price': price, 'vol': vol, 'pnl_pct': pnl_pct,
             'reason': reason, 'sector': sector, 'strategy': strat,
+            'cost_price': cost_price, 'hold_days': hold_days,
+            'entry_date': entry_date,
         })
 
         # 行业统计
@@ -290,6 +358,18 @@ class V19BacktestEngine:
         log.info('[卖出] %s | %s | %s | 价%.2f | %+.2f%% | %s',
                  date_str, sym, reason, price, pnl_pct, strat)
 
+        # V27: 通知执行器记录交易结果，触发连亏熔断
+        self.exec_engine.note_trade_result(pnl_pct / 100, date_str)
+
+    def _calc_sector_momentum_cached(self, bar_idx):
+        """V27: 缓存化行业动量计算。每10个bar才重算一次提高速度。"""
+        cache_key = bar_idx // 10
+        if cache_key in self._sector_momentum_cache:
+            return self._sector_momentum_cache[cache_key]
+        result = self._calc_sector_momentum(bar_idx)
+        self._sector_momentum_cache[cache_key] = result
+        return result
+
     def _calc_sector_momentum(self, bar_idx):
         momentum = {}
         for sector in stock_pool.get_sector_list():
@@ -310,11 +390,12 @@ class V19BacktestEngine:
         return momentum
 
     def _record_daily_value(self, date_str, bar_idx):
+        """V27: 优化 — 直接计算含仓市值，减少重复切片。"""
         market_value = 0.0
         for sym, pos in self.positions.items():
-            df = self._get_df_slice(sym, bar_idx)
-            if df is not None and len(df) > 0:
-                cur_price = float(df['close'].values[-1])
+            df = self.data.get(sym)
+            if df is not None and bar_idx < len(df):
+                cur_price = float(df['close'].values[bar_idx])
                 market_value += cur_price * pos['vol']
 
         total_value = self.cash + market_value
@@ -389,6 +470,11 @@ class V19BacktestEngine:
 # =============================================================================
 
 if __name__ == '__main__':
+    # V29.3: 注释掉可视化交互提示，避免后台运行时阻塞
+    # visualizer.prompt_visual()
+    # 如需可视化，手动取消注释上一行，或在终端直接运行
+    print('  [跳过] 可视化窗口（仅命令行输出）\n')
+
     start_date = config.BACKTEST_START[:10]
     end_date   = config.BACKTEST_END[:10]
 
@@ -402,5 +488,14 @@ if __name__ == '__main__':
         log.error('[错误] 有效股票数据不足，退出')
         sys.exit(1)
 
+    _t0 = time.time()
     engine = V19BacktestEngine(all_data, start_cash=config.BACKTEST_CASH)
     engine.run()
+    _elapsed = time.time() - _t0
+
+    log.info('[耗时] 回测总耗时: %.1f 分钟 (%.1f 秒)', _elapsed / 60, _elapsed)
+
+    # V27: 转换为可视化数据并启动
+    if visualizer.VISUAL_ENABLED:
+        viz_data = visualizer.from_backtest_engine(engine)
+        visualizer.launch_visualizer(viz_data, _elapsed)
