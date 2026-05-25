@@ -29,7 +29,7 @@ class TradeExecutor:
         # 缓存: {sector: [strategy instances]}，随 regime 更新
         self._strategy_cache = {}
         self._cache_regime = None
-        self.cooldown_days = 1   # 只冷却1天
+        self.cooldown_days = 2   # V28: 3→2, V26(1)和V27(3)中点
         self._sell_history = {}  # {symbol: sell_date_str}
         # V22: 连亏熔断
         self._loss_streak = 0
@@ -44,18 +44,20 @@ class TradeExecutor:
         self._sector_momentum = dict(momentum_dict)
 
     def note_trade_result(self, pnl_pct, today_str):
-        """V22: 记录交易结果，跟踪连亏。"""
+        """V27: 记录交易结果，跟踪连亏。盈利时重置熔断。"""
         if pnl_pct < 0:
             self._loss_streak += 1
+            # 检查是否触发熔断
+            if self._loss_streak >= config.STREAK_CIRCUIT_BREAKER:
+                from datetime import datetime as dt, timedelta
+                self._circuit_breaker_until = (
+                    dt.strptime(today_str, '%Y-%m-%d') +
+                    timedelta(days=config.CIRCUIT_BREAKER_DAYS)
+                ).strftime('%Y-%m-%d')
         else:
+            # 盈利：重置连亏计数和熔断状态
             self._loss_streak = 0
-        # 检查是否触发熔断
-        if self._loss_streak >= config.STREAK_CIRCUIT_BREAKER:
-            from datetime import datetime as dt, timedelta
-            self._circuit_breaker_until = (
-                dt.strptime(today_str, '%Y-%m-%d') +
-                timedelta(days=config.CIRCUIT_BREAKER_DAYS)
-            ).strftime('%Y-%m-%d')
+            self._circuit_breaker_until = None
 
     def is_circuit_breaker_active(self, today_str):
         """V22: 检查熔断是否生效。"""
@@ -154,8 +156,9 @@ class TradeExecutor:
             rt_exit  = exit_signals.get('RT')
 
             owner_strategy = info.get('strategy', 'MR')
-            vote_result = fusion.vote_exit(mr_exit, mom_exit, vp_exit, regime,
-                                           owner_strategy=owner_strategy)
+            vote_result = fusion.vote_exit(mr_exit, mom_exit, vp_exit,
+                                           bk_exit=bk_exit, dv_exit=dv_exit, rt_exit=rt_exit,
+                                           regime=regime, owner_strategy=owner_strategy)
 
             if vote_result['action'] == 'SELL':
                 sells.append((sym, cur_price, vote_result, info))
@@ -167,10 +170,15 @@ class TradeExecutor:
     # ==================================================================
 
     def find_buy_candidates(self, symbols, occupied_sectors, pos_info_dict,
-                            data_cache, sector_momentum, regime, max_needed=999):
+                            data_cache, sector_momentum, regime, max_needed=999,
+                            today_str=''):
         """
         扫描候选股。仅保留快速价格过滤，不限制候选数保证选股质量。
         """
+        # V27: 连亏熔断检查（通过 is_circuit_breaker_active 正确处理日期释放）
+        if self.is_circuit_breaker_active(today_str):
+            return []  # 熔断中，不开新仓
+
         symbol_sector = stock_pool.get_symbol_sector_map()
         candidates = []
 
@@ -264,10 +272,43 @@ class TradeExecutor:
                 })
 
         candidates.sort(key=lambda x: x['confidence'], reverse=True)
-        return candidates
+        # V29.4: 策略配额制 — 按策略分组取 top N，防止单一策略垄断所有仓位
+        return self._diversify_candidates(candidates)
+
+    def _diversify_candidates(self, candidates, max_per_strategy=2):
+        """
+        V29.4: 策略配额制 — 确保各策略信号都有代表。
+
+        VP 趋势硬门移除后信号量大增，纯 confidence 排序导致 MR/BK/DV/RT
+        永远抢不到资金。按策略分组，每组取 top max_per_strategy，
+        保证策略多样性。合并后按 confidence 降序排列。
+
+        max_per_strategy=2: 6策略×2=12候选，引擎再从中选5仓，每种策略≤2只
+        """
+        if len(candidates) <= 5:
+            return candidates
+
+        by_strategy = {}
+        for c in candidates:
+            strat = c['best_strategy']
+            by_strategy.setdefault(strat, []).append(c)
+
+        diversified = []
+        for strat_name in ['MR', 'MOM', 'VP', 'BK', 'DV', 'RT']:
+            if strat_name in by_strategy:
+                diversified.extend(by_strategy[strat_name][:max_per_strategy])
+
+        diversified.sort(key=lambda x: x['confidence'], reverse=True)
+        return diversified
 
     def _vote_with_sector_weights(self, mr_sig, mom_sig, vp_sig, bk_sig, dv_sig, rt_sig, regime, sector):
-        """行业差异化投票融合。6策略: MR/MOM/VP/BK/DV/RT"""
+        """行业差异化投票融合。6策略: MR/MOM/VP/BK/DV/RT
+        
+        V29 原始版本 — 置信度用 avg(confidences)，仓位比例按投票权重分层。
+        V29.2 的置信度公式改动（max+共识加成）导致多策略信号排名溢价，
+        挤压了 MR 单独信号的资金分配，MR 从 +105% 跌至 -44%。
+        现 revert 回 V29 原始逻辑。
+        """
         signals = [
             ('MR',  mr_sig), ('MOM', mom_sig), ('VP',  vp_sig),
             ('BK',  bk_sig), ('DV',  dv_sig),  ('RT',  rt_sig),
@@ -294,25 +335,34 @@ class TradeExecutor:
             elif action == 'SELL':
                 sell_votes += weight
 
-        # ---- 决策 ----
+        # ---- V29 原始: 置信度 = 平均置信度 ----
+        if confidences:
+            confidence = sum(confidences) / len(confidences)
+        else:
+            confidence = 0.4
+
+        # ---- 仓位比例（V29 原始）----
         if buy_votes >= 2.0:
-            avg_conf = sum(confidences) / len(confidences) if confidences else 0.5
             return {
-                'action': 'BUY', 'confidence': avg_conf,
+                'action': 'BUY', 'confidence': confidence,
                 'position_pct': 1.0, 'voters': voters,
                 'reason': 'FUSION[%s]' % '+'.join(voters),
             }
-        elif buy_votes >= 1.0:
-            avg_conf = sum(confidences) / len(confidences) if confidences else 0.5
+        elif buy_votes >= 1.5:
             return {
-                'action': 'BUY', 'confidence': avg_conf,
-                'position_pct': 0.70, 'voters': voters,
-                'reason': 'FUSION_弱[%s]' % '+'.join(voters),
+                'action': 'BUY', 'confidence': confidence,
+                'position_pct': 0.80, 'voters': voters,
+                'reason': 'FUSION_强[%s]' % '+'.join(voters),
             }
-        elif buy_votes >= 0.5:
-            avg_conf = sum(confidences) / len(confidences) if confidences else 0.3
+        elif buy_votes >= 1.0:
             return {
-                'action': 'BUY', 'confidence': avg_conf,
+                'action': 'BUY', 'confidence': confidence,
+                'position_pct': 0.60, 'voters': voters,
+                'reason': 'FUSION_双确认[%s]' % '+'.join(voters),
+            }
+        elif buy_votes >= 0.8:
+            return {
+                'action': 'BUY', 'confidence': confidence,
                 'position_pct': 0.40, 'voters': voters,
                 'reason': 'FUSION_单[%s]' % '+'.join(voters),
             }
