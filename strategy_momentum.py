@@ -118,7 +118,7 @@ def get_signal(df, sector=None, sector_momentum=None, regime='range'):
         score = min(1.0, score + 0.15)
 
     # ---- 决策 ----
-    if ma_bullish and price_above_ma20 and score >= 0.50:
+    if ma_bullish and price_above_ma20 and score >= 0.35:   # 宽松: 0.50→0.35
         reason_parts = []
         if golden_cross:
             reason_parts.append('金叉')
