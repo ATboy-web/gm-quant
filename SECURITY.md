@@ -4,10 +4,10 @@
 
 | Version | Security Updates |
 |---------|-----------------|
-| V29.4   | 鉁?Active |
-| V29     | 鉁?Active |
-| V28     | 鈿狅笍 Critical fixes only |
-| < V28   | 鉂?Unsupported |
+| V29.4   | ✅ Active |
+| V29     | ✅ Active |
+| V28     | ⚠️ Critical fixes only |
+| < V28   | ❌ Unsupported |
 
 ## Reporting a Vulnerability
 
@@ -15,12 +15,12 @@
 
 Instead, use GitHub's private Security Advisory feature:
 
-馃憠 **[Report a Vulnerability](https://github.com/ATboy-web/gm-quant/security/advisories/new)**
+👉 **[Report a Vulnerability](https://github.com/ATboy-web/gm-quant/security/advisories/new)**
 
-1. Go to **Security 鈫?Advisories 鈫?Report a vulnerability**
+1. Go to **Security → Advisories → Report a vulnerability**
 2. Describe the vulnerability in detail (steps to reproduce, affected versions)
 3. **Response time**: We aim to acknowledge within 48 hours and fix within 7 days
-4. **Disclosure**: We follow responsible disclosure 鈥?the advisory will be published after a fix is released
+4. **Disclosure**: We follow responsible disclosure — the advisory will be published after a fix is released
 5. **Credit**: We're happy to credit researchers in the advisory (opt-in)
 
 ## Security Best Practices for Contributors
@@ -46,7 +46,7 @@ will be automatically blocked by GitHub's push protection.
 
 ### Token & Credential Hygiene
 - The repo uses `YOUR_GITHUB_PAT_HERE` placeholder in `push_to_github.py`
-- `config.py` uses a placeholder `GM_TOKEN = ''` 鈥?fill in locally, never commit
+- `config.py` uses a placeholder `GM_TOKEN = ''` — fill in locally, never commit
 - Any PR that accidentally includes a real token will be blocked by Secret Scanning
 - If you've accidentally exposed a token, **revoke it immediately** at [GitHub Tokens](https://github.com/settings/tokens)
 
