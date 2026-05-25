@@ -62,6 +62,7 @@ print()
 # =============================================================================
 
 def init(context):
+    print('[init] 开始初始化...')
     # 模式检测: 仿真模式只会在每天14:50触发, 回测处理全部历史
     try:
         if hasattr(MODE_BACKTEST, '__class__'):
@@ -70,6 +71,7 @@ def init(context):
             _is_bt = (getattr(context, 'mode', 1) == 1)
     except:
         _is_bt = True
+    print('[init] 模式=%s' % ('回测' if _is_bt else '仿真'))
     if not _is_bt:
         print('\n' + '!' * 55)
         print('  当前为仿真模式, schedule只在每天14:50触发一次')
@@ -97,6 +99,7 @@ def init(context):
     schedule(schedule_func=on_bar, date_rule='1d', time_rule='14:50:00')
     context.on_backtest_finished = on_backtest_finished
     context.on_error = on_error
+    print('[init] 完成, 订阅%d只, 等待bar回调...' % len(_all))
 
 
 # =============================================================================
@@ -117,6 +120,11 @@ def on_error(context, code, info):
 # =============================================================================
 
 def on_bar(context, bars=None):
+    # 每100次bar打印一次进度
+    _cnt = getattr(context, '_bar_count', 0) + 1
+    context._bar_count = _cnt
+    if _cnt % 100 == 1:
+        print('[on_bar #%d]' % _cnt)
     try:
         _on_bar_impl(context, bars)
     except Exception as e:
