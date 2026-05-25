@@ -114,7 +114,7 @@ def get_signal(df, sector=None, sector_momentum=None, regime='range'):
 
     score = min(1.0, score)
 
-    if score >= 0.55:
+    if score >= 0.60:   # V26: 0.55→0.60, 收紧入场提升胜率
         reason_parts = ['突破%d日高' % BK_BREAKOUT_PERIOD]
         if vol_breakout:
             reason_parts.append('放量%.1f' % vol_ratio)
