@@ -96,7 +96,7 @@ SCORING_WEIGHTS = {
 }
 
 
-ENTRY_THRESHOLD = 0.35       # 最小买入评分 (V17: 0.40→0.35)
+ENTRY_THRESHOLD = 0.40       # V26: 0.35→0.40, 收紧入场提升胜率
 
 
 # =============================================================================
@@ -185,7 +185,13 @@ VOL_SURGE_MIN = 1.2
 
 MAX_POSITIONS  = 5
 
-POSITION_PCT   = 0.18   # 降仓位控回撤
+POSITION_PCT   = 0.15   # V26: 0.18→0.15, 去掉remaining_slots除数, 目标总利用率70%+
+
+# V26: 单只股票最大交易次数限制（防止高频重复交易）
+MAX_TRADES_PER_SYMBOL = 12  # 同一只股票在回测期内最多交易12次
+
+# V26: 策略开关
+STRATEGY_RT_ENABLED = True   # 反转确认策略（V26收紧评分阈值至0.75）
 
 
 VOL_ADJ_HIGH  = 0.7
@@ -241,7 +247,7 @@ REGIME_PARAMS = {
 
         'rsi_buy': 38,
 
-        'entry_threshold': 0.22,
+        'entry_threshold': 0.28,    # V26: 0.22→0.28
 
         'atr_stop_mult': 1.8,
 
@@ -253,7 +259,7 @@ REGIME_PARAMS = {
 
         'rsi_buy': 34,
 
-        'entry_threshold': 0.25,
+        'entry_threshold': 0.30,    # V26: 0.25→0.30
 
         'atr_stop_mult': 1.5,
 
@@ -265,7 +271,7 @@ REGIME_PARAMS = {
 
         'rsi_buy': 30,
 
-        'entry_threshold': 0.30,
+        'entry_threshold': 0.35,    # V26: 0.30→0.35
 
         'atr_stop_mult': 1.2,
 
