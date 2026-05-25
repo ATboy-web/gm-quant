@@ -14,23 +14,22 @@ main.py - V24 六策略行业差异化融合框架
   3. 代码模块化: 交易逻辑抽离到 executor.py，主程序只做初始化+回调
 
 文件结构:
-  main.py          ← 你在这里（初始化+回调，~100行）
+  main.py          ← 初始化+回调
   executor.py      ← 交易执行器（入场/出场/仓位）
   sector_config.py ← 12个行业差异化策略配置
   strategy_factory.py ← 策略工厂
-  strategy_base.py ← 策略基类
   strategy_mr.py   ← 均值回归策略
   strategy_momentum.py ← 动量趋势策略
   strategy_vp.py   ← 量价背离策略
   strategy_breakout.py ← 突破策略 
   strategy_dividend.py ← 红利策略 
-  strategy_reversal.py ← 反转确认策略 (V20)
+  strategy_reversal.py ← 反转确认策略
   fusion.py        ← 投票融合引擎
   config.py        ← 全局参数
   indicators.py    ← 技术指标
   stock_pool.py    ← 股票池
   screener.py      ← 选股引擎
-  knn_matcher.py   ← KNN匹配
+  visualizer.py    ← 回测可视化
 """
 
 import sys
@@ -201,7 +200,8 @@ def _on_bar_impl(context, bars=None):
     if len(context.pos_info) < max_pos:
         candidates = exec_engine.find_buy_candidates(
             context.SYMBOLS, occupied, context.pos_info,
-            context.data_cache, sector_momentum, regime
+            context.data_cache, sector_momentum, regime,
+            today_str=getattr(context, '_today', '')
         )
         _do_buys(context, candidates, max_pos)
 
@@ -353,6 +353,10 @@ def _do_sell(context, sym, price, reason, info):
              sym, sector, reason, price, pnl_pct, strat)
     try: trace.sell(strat, sym, pnl_pct/100, reason, context.regime)
     except: pass
+
+    # V28: 通知执行器记录交易结果，触发连亏熔断
+    # 使用 context._today 而非局部变量 today（_do_sell 中 today 不在作用域内）
+    exec_engine.note_trade_result(pnl_pct / 100, getattr(context, '_today', ''))
 
     context.stats['total_trades'] += 1
     context.stats['total_pnl'] += pnl_pct
