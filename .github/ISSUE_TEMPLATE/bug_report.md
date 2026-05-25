@@ -1,20 +1,31 @@
 ---
 name: Bug Report
-about: 报告策略/代码问题
+about: Report a bug in the strategy or framework
+title: "[Bug] "
 labels: bug
+assignees: ATboy-web
 ---
 
-## 现象
-<!-- 描述问题 -->
+## Describe the Bug
+A clear description of what the bug is.
 
-## 回测
-- 收益率: 
-- 回撤: 
-- 交易次数:
+## Version
+- gm-quant version: [e.g. V29.4]
+- Python version: [e.g. 3.13]
+- GM SDK version: [e.g. 3.0.183]
 
-## 日志
-<!-- trace 关键行 -->
+## Steps to Reproduce
+1. 
+2. 
+3. 
 
-## 环境
-- GM SDK版本:
-- Python版本:
+## Expected Behavior
+What should have happened.
+
+## Actual Behavior
+What actually happened (include error messages / backtest output).
+
+## Backtest Data (if relevant)
+- Strategy affected: [MR/MOM/VP/BK/DV/RT]
+- Backtest period: [YYYY-MM-DD ~ YYYY-MM-DD]
+- Total return / drawdown:
