@@ -144,7 +144,7 @@ def get_signal(df, sector=None, sector_momentum=None, regime='range'):
 
     score = min(1.0, score)
 
-    if score >= 0.50:
+    if score >= 0.55:   # V26: 0.50→0.55, 收紧入场提升胜率
         return {
             'action': 'BUY',
             'confidence': score,
