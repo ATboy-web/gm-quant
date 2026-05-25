@@ -34,8 +34,8 @@ DV_SHORT_LOOKBACK = 20    # 短期回看窗口
 DV_STOP_LOSS      = 0.05  # 固定止损 5%
 DV_TAKE_PROFIT    = 0.10  # 固定止盈 10%
 DV_TIME_STOP      = 30    # 时间止损天数
-DV_RSI_BUY_LOW    = 35    # RSI 买入下限
-DV_RSI_BUY_HIGH   = 55    # RSI 买入上限
+DV_RSI_BUY_LOW    = 30    # RSI 买入下限 (宽松: 35→30)
+DV_RSI_BUY_HIGH   = 60    # RSI 买入上限 (宽松: 55→60)
 
 
 def get_signal(df, sector=None, sector_momentum=None, regime='range'):
