@@ -110,6 +110,16 @@ def init(context):
     context.SYMBOLS = _all[:-1]  # 去掉大盘指数
     schedule(schedule_func=on_bar, date_rule='1d', time_rule='14:50:00')
     context.on_backtest_finished = on_backtest_finished
+    context.on_error = on_error
+
+
+# =============================================================================
+# on_error() — 忽略非关键错误
+# =============================================================================
+def on_error(context, code, info):
+    # 1100=交易服务未连接(回测正常), 其他警告才打印
+    if code != 1100:
+        print('[error] code=%s %s' % (code, info))
 
 
 # =============================================================================
