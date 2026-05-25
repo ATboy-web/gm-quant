@@ -36,6 +36,8 @@ class TradeExecutor:
         self._circuit_breaker_until = None  # 熔断至某日
         # V22: 行业动量缓存
         self._sector_momentum = {}
+        # V26: 单只股票交易次数追踪（防止高频重复交易）
+        self._symbol_buy_count = {}
 
     def update_sector_momentum(self, momentum_dict):
         """V22: 更新行业动量数据。"""
@@ -77,6 +79,10 @@ class TradeExecutor:
 
     def record_sell(self, symbol, sell_date_str):
         self._sell_history[symbol] = sell_date_str
+
+    def record_buy(self, symbol):
+        """V26: 记录买入，追踪单只股票交易次数。"""
+        self._symbol_buy_count[symbol] = self._symbol_buy_count.get(symbol, 0) + 1
 
     def cleanup_cooldowns(self, today_str):
         from datetime import datetime as dt
@@ -176,6 +182,10 @@ class TradeExecutor:
                 continue
 
             if sym in self._sell_history:
+                continue
+
+            # V26: 单只股票最大交易次数限制
+            if self._symbol_buy_count.get(sym, 0) >= config.MAX_TRADES_PER_SYMBOL:
                 continue
 
             sector = symbol_sector.get(sym, '未知')
@@ -321,25 +331,30 @@ class TradeExecutor:
 
     def calc_position_size(self, candidate, available_cash, remaining_slots):
         """
-        根据行业配置计算买入数量。
+        V26: 基于固定比例分配仓位，不再除以remaining_slots。
+        每只持仓约占可用资金的 12%-18%（根据融合信号强度），
+        5只持仓 → 约 60%-75% 总资金利用率。
 
         Args:
             candidate:      买入候选 dict
             available_cash: 可用现金
-            remaining_slots: 剩余可开仓数
+            remaining_slots: 剩余可开仓数（保留参数兼容，V26不再使用）
 
         Returns:
             int: 买入数量（股），0 表示不够
         """
         sector = candidate['sector']
         price = candidate['price']
-        sector_cfg = sector_config.get_sector_config(sector)
 
-        # 行业基础仓位 × 融合仓位比例
+        # 行业基础仓位比 × 融合信号仓位比
+        sector_cfg = sector_config.get_sector_config(sector)
         base_pct = sector_cfg.get('position_pct', config.POSITION_PCT)
         pos_pct = base_pct * candidate['position_pct']
 
-        allocated = available_cash * pos_pct / max(remaining_slots, 1)
+        # V26: 直接按比例分配，不除以remaining_slots
+        # 限制单只最大仓位为20%防止过度集中
+        pos_pct = min(pos_pct, 0.22)
+        allocated = available_cash * pos_pct
         if allocated < price * 100:
             return 0
 
