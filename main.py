@@ -96,13 +96,12 @@ def init(context):
     subscribe(symbols=_all, frequency='1d', count=config.DATA_COUNT)
     context.SYMBOLS = _all[:-1]
 
-    # 回测: schedule处理全部历史日 | 仿真: 每个交易日15:05触发(收盘后)
-    _time = '15:05:00' if not _is_bt else '14:50:00'
-    schedule(schedule_func=on_bar, date_rule='1d', time_rule=_time)
+    # 统一14:50(收盘前10分钟, 模拟交易时段内)
+    schedule(schedule_func=on_bar, date_rule='1d', time_rule='14:50:00')
 
     context.on_backtest_finished = on_backtest_finished
     context.on_error = on_error
-    print('[init] 完成, 订阅%d只, 模式=%s, time=%s' % (len(_all), '回测' if _is_bt else '仿真', _time))
+    print('[init] 完成, 订阅%d只, 模式=%s, 交易时间=14:50' % (len(_all), '回测' if _is_bt else '仿真'))
 
 
 # =============================================================================
