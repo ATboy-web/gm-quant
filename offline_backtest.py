@@ -34,6 +34,7 @@ import screener
 import sector_config
 import executor
 import trace
+import gm_logger as logger
 import strategy_mr
 import strategy_momentum
 import strategy_vp
@@ -52,12 +53,14 @@ SYMBOLS = stock_pool.get_all_symbols()
 MARKET_INDEX = config.MARKET_INDEX
 SYMBOL_SECTOR_MAP = stock_pool.get_symbol_sector_map()
 
-print('=' * 60)
-print('  V20 离线回测 — 六策略行业差异化融合框架')
-print('  策略: MR + MOM + VP + BK + DV + RT')
-print('  V20: RT反转确认 + 弱势行业优化')
-print('  股票池: %d 只 / %d 行业' % (len(SYMBOLS), len(stock_pool.get_sector_list())))
-print('=' * 60)
+logger.setup_logger(name='offline_backtest')
+log = logger.log
+
+log.info('=' * 56)
+log.info('  V20 离线回测 — 六策略行业差异化融合框架')
+log.info('  策略: MR + MOM + VP + BK + DV + RT')
+log.info('  股票池: %d 只 / %d 行业', len(SYMBOLS), len(stock_pool.get_sector_list()))
+log.info('=' * 56)
 sector_config.print_summary()
 
 
@@ -81,7 +84,7 @@ def fetch_history(symbol, start, end, freq='1d'):
 
 
 def preload_all_data(start, end):
-    print('[数据] 正在下载历史数据...')
+    log.info('[数据] 正在下载历史数据...')
     data = {}
     all_syms = list(SYMBOLS) + [MARKET_INDEX]
 
@@ -90,9 +93,9 @@ def preload_all_data(start, end):
         if df is not None and len(df) >= config.MIN_DATA_BARS:
             data[sym] = df
         if (i + 1) % 10 == 0 or (i + 1) == len(all_syms):
-            print('  进度: %d/%d' % (i + 1, len(all_syms)))
+            log.info('  进度: %d/%d', i + 1, len(all_syms))
 
-    print('[数据] 完成: 成功 %d/%d' % (len(data), len(all_syms)))
+    log.info('[数据] 完成: 成功 %d/%d', len(data), len(all_syms))
     return data
 
 
@@ -116,8 +119,8 @@ class V19BacktestEngine:
         if MARKET_INDEX in data:
             self.bar_dates = list(data[MARKET_INDEX]['bob'].dt.strftime('%Y-%m-%d'))
 
-        print('[引擎] 交易日数: %d | 初始资金: %.0f'
-              % (len(self.bar_dates), start_cash))
+        log.info('[引擎] 交易日数: %d | 初始资金: %.0f',
+                 len(self.bar_dates), start_cash)
 
         # 策略统计
         self.strategy_stats = {
@@ -132,7 +135,7 @@ class V19BacktestEngine:
         self.sector_stats = {}
 
     def run(self):
-        print('[引擎] 开始回测...')
+        log.info('[引擎] 开始回测...')
         for i, date_str in enumerate(self.bar_dates):
             self._daily_bar(date_str, i)
             self._record_daily_value(date_str, i)
@@ -141,8 +144,8 @@ class V19BacktestEngine:
                 total_val = self.daily_values[-1]['total'] if self.daily_values else 0
                 pos_count = len(self.positions)
                 ret = (total_val - self.initial_cash) / self.initial_cash * 100
-                print('  [%s] 进度 %d/%d | 净值 %.0f (%+.1f%%) | 持仓 %d'
-                      % (date_str, i + 1, len(self.bar_dates), total_val, ret, pos_count))
+                log.info('  [%s] 进度 %d/%d | 净值 %.0f (%+.1f%%) | 持仓 %d',
+                         date_str, i + 1, len(self.bar_dates), total_val, ret, pos_count)
 
         self._print_summary()
 
@@ -227,9 +230,9 @@ class V19BacktestEngine:
             taken_count += 1
 
             rsi_str = ' RSI=%.0f' % c['rsi'] if c.get('rsi') else ''
-            print('[买入] %s | %s | %s | 策略:%s | %.2f×%d%s'
-                  % (date_str, sym, c['reason'],
-                     c['best_strategy'], price, qty, rsi_str))
+            log.info('[买入] %s | %s | %s | 策略:%s | %.2f×%d%s',
+                     date_str, sym, c['reason'],
+                     c['best_strategy'], price, qty, rsi_str)
 
     def _get_df_slice(self, symbol, bar_idx):
         if symbol not in self.data:
@@ -284,8 +287,8 @@ class V19BacktestEngine:
             if pnl_pct > 0:
                 self.strategy_stats[strat]['wins'] += 1
 
-        print('[卖出] %s | %s | %s | 价%.2f | %+.2f%% | %s'
-              % (date_str, sym, reason, price, pnl_pct, strat))
+        log.info('[卖出] %s | %s | %s | 价%.2f | %+.2f%% | %s',
+                 date_str, sym, reason, price, pnl_pct, strat)
 
     def _calc_sector_momentum(self, bar_idx):
         momentum = {}
@@ -322,7 +325,7 @@ class V19BacktestEngine:
 
     def _print_summary(self):
         if not self.daily_values:
-            print('[结果] 无交易记录')
+            log.info('[结果] 无交易记录')
             return
 
         df = pd.DataFrame(self.daily_values)
@@ -338,48 +341,47 @@ class V19BacktestEngine:
         win_trades = [t for t in sell_trades if t['pnl_pct'] > 0]
         win_rate = len(win_trades) / len(sell_trades) * 100 if sell_trades else 0
 
-        print()
-        print('=' * 60)
-        print('  V20 六策略行业差异化回测结果摘要')
-        print('=' * 60)
-        print('  初始资金:   %.0f' % initial)
-        print('  最终净值:   %.0f' % final_value)
-        print('  总收益率:   %+.2f%%' % total_return)
-        print('  最大回撤:   %.2f%%' % max_dd)
-        print('  交易次数:   %d (卖出%d)' % (len(self.trades), len(sell_trades)))
-        print('  胜率:       %.1f%% (%d/%d)'
-              % (win_rate, len(win_trades), len(sell_trades)))
-        print('  平均盈亏:   %+.2f%%' %
-              (np.mean([t['pnl_pct'] for t in sell_trades]) if sell_trades else 0))
+        log.info('=' * 56)
+        log.info('  V20 六策略行业差异化回测结果摘要')
+        log.info('=' * 56)
+        log.info('  初始资金:   %.0f', initial)
+        log.info('  最终净值:   %.0f', final_value)
+        log.info('  总收益率:   %+.2f%%', total_return)
+        log.info('  最大回撤:   %.2f%%', max_dd)
+        log.info('  交易次数:   %d (卖出%d)', len(self.trades), len(sell_trades))
+        log.info('  胜率:       %.1f%% (%d/%d)',
+                 win_rate, len(win_trades), len(sell_trades))
+        if sell_trades:
+            log.info('  平均盈亏:   %+.2f%%',
+                     np.mean([t['pnl_pct'] for t in sell_trades]))
 
         # ---- 策略分项 ----
-        print('  ---- 策略分项 ----')
+        log.info('  ---- 策略分项 ----')
         for name in ['MR', 'MOM', 'VP', 'BK', 'DV', 'RT']:
             ss = self.strategy_stats[name]
             if ss['total'] > 0:
                 wr = ss['wins'] / ss['total'] * 100
-                print('  %s: 交易%d 胜率%.1f%% 累计盈亏%+.1f%%'
-                      % (name, ss['total'], wr, ss['pnl']))
+                log.info('  %s: 交易%d 胜率%.1f%% 累计盈亏%+.1f%%',
+                         name, ss['total'], wr, ss['pnl'])
 
         # ---- 行业分项 ----
-        print('  ---- 行业分项 ----')
+        log.info('  ---- 行业分项 ----')
         for sector in sorted(self.sector_stats.keys()):
             ss = self.sector_stats[sector]
             if ss['total'] > 0:
                 wr = ss['wins'] / ss['total'] * 100
-                print('  %-6s: 交易%d 胜率%.1f%% 累计%+.1f%%'
-                      % (sector, ss['total'], wr, ss['pnl']))
+                log.info('  %-6s: 交易%d 胜率%.1f%% 累计%+.1f%%',
+                         sector, ss['total'], wr, ss['pnl'])
 
-        print('=' * 60)
+        log.info('=' * 56)
 
         # 最近 10 笔交易
         if sell_trades:
-            print()
-            print('  最近 10 笔卖出:')
+            log.info('  最近 10 笔卖出:')
             for t in sell_trades[-10:]:
-                print('  %s %s %-6s %+.2f%% %s %s'
-                      % (t['date'], t['symbol'], t.get('strategy', '?'),
-                         t['pnl_pct'], t.get('reason', ''), t.get('sector', '')))
+                log.info('  %s %s %-6s %+.2f%% %s %s',
+                         t['date'], t['symbol'], t.get('strategy', '?'),
+                         t['pnl_pct'], t.get('reason', ''), t.get('sector', ''))
 
 
 # =============================================================================
@@ -393,11 +395,11 @@ if __name__ == '__main__':
     all_data = preload_all_data(start_date, end_date)
 
     if MARKET_INDEX not in all_data:
-        print('[错误] 无法获取大盘指数数据，退出')
+        log.error('[错误] 无法获取大盘指数数据，退出')
         sys.exit(1)
 
     if len(all_data) < 5:
-        print('[错误] 有效股票数据不足，退出')
+        log.error('[错误] 有效股票数据不足，退出')
         sys.exit(1)
 
     engine = V19BacktestEngine(all_data, start_cash=config.BACKTEST_CASH)
