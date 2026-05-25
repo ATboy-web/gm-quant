@@ -4,6 +4,18 @@
 sector_config.py - V24 行业差异化策略配置
 
 
+V28 改进:
+  各行业 entry_threshold 从 V27 值降低 ~0.02，回到 V26/V27 中点
+  高波动行业仓位微调 (+0.01), bear 市场门槛从 +0.10->0.08
+
+V29 改进:
+  MOM 在8个非趋势行业禁用（金融/消费/医药/制造/汽车/化工/公用事业/煤炭）
+  MOM 在4个趋势行业降权（科技2.0→1.0, 新能源0.8→0.5, 有色1.5→0.8, 军工1.0→0.5）
+  DV 全行业降权~30%（金融1.5→1.0, 消费1.5→1.0, 公用事业1.5→1.0, 煤炭2.0→1.2）
+  BK 补偿提权（科技1.5→2.0, 军工1.0→1.5）
+
+
+
 V19.2 改进:
 
 
@@ -115,13 +127,13 @@ SECTOR_CONFIGS = {
             'MR':  {'enabled': True,  'weight': 3.0},
 
 
-            'DV':  {'enabled': True,  'weight': 1.5},    # V19.2: 新增红利
+            'DV':  {'enabled': True,  'weight': 1.0},    # V29: 1.5→1.0
 
 
             'VP':  {'enabled': True,  'weight': 1.0},    # V19.2: 1.5→1.0
 
 
-            'MOM': {'enabled': True,  'weight': 0.5},
+            'MOM': {'enabled': False, 'weight': 0.0},  # V29: 禁用, 非趋势
 
 
         },
@@ -151,7 +163,7 @@ SECTOR_CONFIGS = {
         'time_stop_days': 15,       # V19.1: 12→15
 
 
-        'entry_threshold': 0.35,   # V26: 0.30→0.35
+        'entry_threshold': 0.36,   # V28: 0.38→0.36
 
         'vol_surge_min': 1.1,
 
@@ -195,13 +207,13 @@ SECTOR_CONFIGS = {
             'MR':  {'enabled': True,  'weight': 3.0},
 
 
-            'DV':  {'enabled': True,  'weight': 1.5},    # V19.2: 新增红利
+            'DV':  {'enabled': True,  'weight': 1.0},    # V29: 1.5→1.0
 
 
             'VP':  {'enabled': True,  'weight': 1.0},    # V19.2: 1.5→1.0
 
 
-            'MOM': {'enabled': True,  'weight': 0.5},
+            'MOM': {'enabled': False, 'weight': 0.0},  # V29: 禁用, 非趋势
 
 
         },
@@ -231,7 +243,7 @@ SECTOR_CONFIGS = {
         'time_stop_days': 18,       # V19.1: 15→18
 
 
-        'entry_threshold': 0.35,   # V26: 0.30→0.35
+        'entry_threshold': 0.36,   # V28: 0.38→0.36
 
         'vol_surge_min': 1.1,
 
@@ -278,7 +290,7 @@ SECTOR_CONFIGS = {
             'VP':  {'enabled': True,  'weight': 2.0},
 
 
-            'MOM': {'enabled': True,  'weight': 0.5},
+            'MOM': {'enabled': False, 'weight': 0.0},  # V29: 禁用
 
 
         },
@@ -308,7 +320,7 @@ SECTOR_CONFIGS = {
         'time_stop_days': 18,       # V19.1: 15→18
 
 
-        'entry_threshold': 0.40,   # V26: 0.35→0.40
+        'entry_threshold': 0.41,   # V28: 0.43→0.41
 
         'vol_surge_min': 1.2,
 
@@ -352,10 +364,10 @@ SECTOR_CONFIGS = {
             'MR':  {'enabled': True,  'weight': 2.0},
 
 
-            'MOM': {'enabled': True,  'weight': 2.0},
+            'MOM': {'enabled': True,  'weight': 1.0},  # V29: 2.0→1.0
 
 
-            'BK':  {'enabled': True,  'weight': 1.5},    # V19.2: 新增突破
+            'BK':  {'enabled': True,  'weight': 2.0},    # V29: 1.5→2.0, 补偿MOM
 
 
             'VP':  {'enabled': True,  'weight': 1.0},
@@ -382,13 +394,13 @@ SECTOR_CONFIGS = {
         'stop_loss_cap': 0.10,
 
 
-        'position_pct': 0.20,
+        'position_pct': 0.19,   # V28: 0.18→0.19, 高波动略放宽
 
 
         'time_stop_days': 15,       # V19.1: 10→15
 
 
-        'entry_threshold': 0.40,   # V26: 0.35→0.40
+        'entry_threshold': 0.41,   # V28: 0.43→0.41
 
         'vol_surge_min': 1.3,
 
@@ -438,7 +450,7 @@ SECTOR_CONFIGS = {
             'BK':  {'enabled': True,  'weight': 1.0},
 
 
-            'MOM': {'enabled': True,  'weight': 0.8},
+            'MOM': {'enabled': True,  'weight': 0.5},  # V29: 0.8→0.5
 
 
         },
@@ -462,13 +474,13 @@ SECTOR_CONFIGS = {
         'stop_loss_cap': 0.12,   # 提高止损上限
 
 
-        'position_pct': 0.18,    # 略降仓位
+        'position_pct': 0.16,   # V28: 0.15→0.16, 新能源略放宽
 
 
         'time_stop_days': 22,    # 给强周期更多修复时间
 
 
-        'entry_threshold': 0.40,   # V26: 0.35→0.40
+        'entry_threshold': 0.41,   # V28: 0.43→0.41
 
         'vol_surge_min': 1.3,
 
@@ -515,7 +527,7 @@ SECTOR_CONFIGS = {
             'MR':  {'enabled': True,  'weight': 2.0},    # V21: 2.5→2.0
 
 
-            'MOM': {'enabled': True,  'weight': 1.5},
+            'MOM': {'enabled': False, 'weight': 0.0},  # V29: 禁用, 非趋势
 
 
             'RT':  {'enabled': True,  'weight': 1.0},    # V21: 新增
@@ -551,7 +563,7 @@ SECTOR_CONFIGS = {
         'time_stop_days': 18,       # V19.1: 15→18
 
 
-        'entry_threshold': 0.38,   # V26: 0.33→0.38
+        'entry_threshold': 0.39,   # V28: 0.41→0.39
 
         'vol_surge_min': 1.2,
 
@@ -598,7 +610,7 @@ SECTOR_CONFIGS = {
             'VP':  {'enabled': True,  'weight': 2.0},
 
 
-            'MOM': {'enabled': True,  'weight': 1.5},
+            'MOM': {'enabled': True,  'weight': 0.8},  # V29: 1.5→0.8
 
 
             'BK':  {'enabled': True,  'weight': 1.0},    # V19.2: 新增突破
@@ -625,13 +637,13 @@ SECTOR_CONFIGS = {
         'stop_loss_cap': 0.10,
 
 
-        'position_pct': 0.20,
+        'position_pct': 0.19,   # V28: 0.18→0.19, 高波动略放宽
 
 
         'time_stop_days': 15,       # V19.1: 12→15
 
 
-        'entry_threshold': 0.38,   # V26: 0.33→0.38
+        'entry_threshold': 0.39,   # V28: 0.41→0.39
 
         'vol_surge_min': 1.3,
 
@@ -675,7 +687,7 @@ SECTOR_CONFIGS = {
             'MR':  {'enabled': True,  'weight': 2.5},
 
 
-            'MOM': {'enabled': True,  'weight': 1.5},
+            'MOM': {'enabled': False, 'weight': 0.0},  # V29: 禁用, 行业差
 
 
             'VP':  {'enabled': True,  'weight': 1.0},
@@ -708,7 +720,7 @@ SECTOR_CONFIGS = {
         'time_stop_days': 15,       # V19.1: 12→15
 
 
-        'entry_threshold': 0.38,   # V26: 0.33→0.38
+        'entry_threshold': 0.39,   # V28: 0.41→0.39
 
         'vol_surge_min': 1.2,
 
@@ -755,7 +767,7 @@ SECTOR_CONFIGS = {
             'VP':  {'enabled': True,  'weight': 1.5},
 
 
-            'MOM': {'enabled': True,  'weight': 0.8},
+            'MOM': {'enabled': False, 'weight': 0.0},  # V29: 禁用
 
 
         },
@@ -785,7 +797,7 @@ SECTOR_CONFIGS = {
         'time_stop_days': 18,       # V19.1: 15→18
 
 
-        'entry_threshold': 0.38,   # V26: 0.33→0.38
+        'entry_threshold': 0.39,   # V28: 0.41→0.39
 
         'vol_surge_min': 1.2,
 
@@ -832,7 +844,7 @@ SECTOR_CONFIGS = {
             'MR':  {'enabled': True,  'weight': 4.0},    # 绝对主导
 
 
-            'DV':  {'enabled': True,  'weight': 1.5},
+            'DV':  {'enabled': True,  'weight': 1.0},  # V29: 1.5→1.0
 
 
             'VP':  {'enabled': True,  'weight': 0.5},
@@ -868,7 +880,7 @@ SECTOR_CONFIGS = {
         'time_stop_days': 25,
 
 
-        'entry_threshold': 0.30,   # V26: 0.25→0.30
+        'entry_threshold': 0.31,   # V28: 0.33→0.31
 
         'vol_surge_min': 1.0,
 
@@ -915,10 +927,10 @@ SECTOR_CONFIGS = {
             'VP':  {'enabled': True,  'weight': 1.5},
 
 
-            'BK':  {'enabled': True,  'weight': 1.0},    # V19.2: 新增突破
+            'BK':  {'enabled': True,  'weight': 1.5},    # V29: 1.0→1.5, 补偿MOM
 
 
-            'MOM': {'enabled': True,  'weight': 1.0},
+            'MOM': {'enabled': True,  'weight': 0.5},  # V29: 1.0→0.5
 
 
         },
@@ -942,13 +954,13 @@ SECTOR_CONFIGS = {
         'stop_loss_cap': 0.10,
 
 
-        'position_pct': 0.20,
+        'position_pct': 0.19,   # V28: 0.18→0.19, 高波动略放宽
 
 
         'time_stop_days': 15,       # V19.1: 12→15
 
 
-        'entry_threshold': 0.40,   # V26: 0.35→0.40
+        'entry_threshold': 0.41,   # V28: 0.43→0.41
 
         'vol_surge_min': 1.3,
 
@@ -995,7 +1007,7 @@ SECTOR_CONFIGS = {
             'MR':  {'enabled': True,  'weight': 2.0},    # V20: 3.0→2.0，降低抄底权重
 
 
-            'DV':  {'enabled': True,  'weight': 2.0},    # V20: 1.0→2.0，红利策略提权
+            'DV':  {'enabled': True,  'weight': 1.2},    # V29: 2.0→1.2, 煤炭
 
 
             'RT':  {'enabled': True,  'weight': 1.5},    # V20: 新增反转确认
@@ -1004,7 +1016,7 @@ SECTOR_CONFIGS = {
             'VP':  {'enabled': True,  'weight': 1.0},    # V20: 1.5→1.0
 
 
-            'MOM': {'enabled': True,  'weight': 0.5},    # V20: 0.8→0.5
+            'MOM': {'enabled': False, 'weight': 0.0},    # V29: 禁用, 非趋势行业
 
 
         },
@@ -1034,7 +1046,7 @@ SECTOR_CONFIGS = {
         'time_stop_days': 18,       # V19.1: 15→18
 
 
-        'entry_threshold': 0.38,   # V26: 0.33→0.38
+        'entry_threshold': 0.39,   # V28: 0.41→0.39
 
         'vol_surge_min': 1.2,
 
@@ -1149,13 +1161,13 @@ REGIME_OVERRIDE = {
     'bull': {
 
 
-        'position_multiplier': 1.2,
+        'position_multiplier': 1.15,       # V27: 1.2→1.15
 
 
         'rsi_buy_adjust': 2,
 
 
-        'entry_threshold_adjust': -0.03,   # V26: -0.05→-0.03, 收紧牛市门槛
+        'entry_threshold_adjust': -0.03,   # V28: -0.02→-0.03, 牛市略放松
 
 
     },
@@ -1179,13 +1191,13 @@ REGIME_OVERRIDE = {
     'bear': {
 
 
-        'position_multiplier': 0.7,
+        'position_multiplier': 0.65,       # V27: 0.7→0.65, 熊市更保守
 
 
         'rsi_buy_adjust': -3,
 
 
-        'entry_threshold_adjust': 0.08,    # V26: 0.10→0.08, 熊市略放松
+        'entry_threshold_adjust': 0.08,    # V28: 0.10→0.08, 熊市稍放松
 
 
     },
