@@ -1,36 +1,7 @@
 """
-main.py - V24 六策略行业差异化融合框架
-
-  1. 新增反转确认策略(RT)
-  2. 6策略体系: MR + MOM + VP + BK + DV + RT
-  3. 化工/新能源/煤炭行业针对性优化（RT反转确认替代MR左侧抄底）
-
-  1. 新增突破策略(BK)和红利策略(DV)
-  2. 新能源/公用事业参数大幅优化
-  3. 高波动行业添加BK，低波动行业添加DV
-
-  1. 行业差异化: 12个行业各自配置策略参数（不再一套参数走天下）
-  2. 策略工厂: 根据行业+市场状态动态创建策略实例
-  3. 代码模块化: 交易逻辑抽离到 executor.py，主程序只做初始化+回调
-
-文件结构:
-  main.py          ← 你在这里（初始化+回调，~100行）
-  executor.py      ← 交易执行器（入场/出场/仓位）
-  sector_config.py ← 12个行业差异化策略配置
-  strategy_factory.py ← 策略工厂
-  strategy_base.py ← 策略基类
-  strategy_mr.py   ← 均值回归策略
-  strategy_momentum.py ← 动量趋势策略
-  strategy_vp.py   ← 量价背离策略
-  strategy_breakout.py ← 突破策略 
-  strategy_dividend.py ← 红利策略 
-  strategy_reversal.py ← 反转确认策略 (V20)
-  fusion.py        ← 投票融合引擎
-  config.py        ← 全局参数
-  indicators.py    ← 技术指标
-  stock_pool.py    ← 股票池
-  screener.py      ← 选股引擎
-  knn_matcher.py   ← KNN匹配
+main.py — 掘金终端主入口 (V24)
+6策略融合 + 行业差异化 + AI辅助(可选) + 模式检测
+49股池 / 5仓位 / 回测+仿真双模
 """
 
 import sys
@@ -63,7 +34,7 @@ exec_engine = executor.TradeExecutor()
 print('=' * 60)
 print('  V24 六策略行业差异化融合框架')
 print('  策略: MR + MOM + VP + BK + DV + RT(反转确认)')
-print('  V21: GM主程序同步 + CSV分析针对性优化')
+print('  GM终端同步 + CSV分析针对性优化')
 print('  股票池: %d 只 / %d 行业'
       % (len(SYMBOLS), len(stock_pool.get_sector_list())))
 print('=' * 60)
@@ -91,8 +62,23 @@ print()
 # =============================================================================
 
 def init(context):
+    # 模式检测: 仿真模式只会在每天14:50触发, 回测处理全部历史
+    try:
+        if hasattr(MODE_BACKTEST, '__class__'):
+            _is_bt = (context.mode == MODE_BACKTEST)
+        else:
+            _is_bt = (getattr(context, 'mode', 1) == 1)
+    except:
+        _is_bt = True
+    if not _is_bt:
+        print('\n' + '!' * 55)
+        print('  当前为仿真模式, schedule只在每天14:50触发一次')
+        print('  如需跑历史数据请切换到【回测模式】')
+        print('!' * 55 + '\n')
+
     context.pos_info   = {}
     context.sector_pos = {}
+    context.mode_flag  = _is_bt  # 供后续代码判断模式
     context.data_cache = {}
     context.regime     = 'range'
     context.stats      = {'total_trades': 0, 'wins': 0, 'losses': 0, 'total_pnl': 0.0}
@@ -117,8 +103,12 @@ def init(context):
 # on_error() — 忽略非关键错误
 # =============================================================================
 def on_error(context, code, info):
-    # 1100=交易服务未连接(回测正常), 其他警告才打印
-    if code != 1100:
+    # 1100=交易服务未连接, 提示后继续 (回测不需要, 模拟盘需要)
+    if code == 1100:
+        if not getattr(context, '_warned_1100', False):
+            print('[提示] 交易服务未连接(code=1100), 模拟盘请检查掘金终端交易服务')
+            context._warned_1100 = True
+    else:
         print('[error] code=%s %s' % (code, info))
 
 
