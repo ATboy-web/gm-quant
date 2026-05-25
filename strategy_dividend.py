@@ -1,26 +1,28 @@
 """
-strategy_dividend.py - 红利策略 
+strategy_dividend.py - 红利策略 (V29)
 
 适用于低波动防御行业（金融/消费/煤炭/公用事业），
 以股息率+低估值为核心，追求稳健收益。
 
-核心逻辑:
+V29 优化（解决 -32.2% 亏损、153笔高频低质交易）:
+  1. "低位"重定义: 60d涨幅<0% AND 20d跌幅<-4%（原 OR，门槛大幅提高）
+  2. RSI区间收窄: 33-52（原 30-60）
+  3. 入场门槛: 0.60→0.72
+  4. 止损放宽: 5%→6%（减少正常波动被止损）
+  5. 时间止损: 30→18天（更快淘汰无效持仓）
+  6. 新增MA过滤: 价格必须低于MA60（真正的价值买点）
+
+V18 核心逻辑:
   买入:
-    - 价格处于相对低位（近 60 日涨幅 < 5% 或近 20 日跌幅 > 3%）
+    - 价格处于相对低位（近 60 日下跌 + 近 20 日明显回调）
     - 成交量不异常放量（排除利空出逃）
-    - RSI 在 35-55 区间（非极端超卖，也不追高）
-    - 均线长期趋势不破（价格 > MA60 或 MA20 接近 MA60）
+    - RSI 在 33-52 区间（非极端，但不追高）
+    - 价格低于 MA60（价值区间）
   卖出:
     - 固定止盈 10%（防御股不贪）
-    - 固定止损 5%（防守型，止损严格）
-    - 时间止损 30 天无收益 → 退出
-    - RSI > 75 过热
-
-与其他策略的互补:
-  - MR 看超卖反弹，DV 看低位价值
-  - MOM 看趋势追涨，DV 看低位买入
-  - VP 看量价背离，DV 不依赖量价
-  - BK 看突破加速，DV 看低位稳健
+    - 固定止损 6%
+    - 时间止损 18 天无收益 → 退出
+    - RSI > 70 过热
 """
 
 import numpy as np
@@ -28,25 +30,28 @@ import config
 import indicators
 
 
-# 红利策略参数
+# 红利策略参数 (V29 收紧)
 DV_LOOKBACK       = 60    # 长期回看窗口
 DV_SHORT_LOOKBACK = 20    # 短期回看窗口
-DV_STOP_LOSS      = 0.05  # 固定止损 5%
+DV_STOP_LOSS      = 0.06  # V29: 0.05→0.06, 放宽减少噪音止损
 DV_TAKE_PROFIT    = 0.10  # 固定止盈 10%
-DV_TIME_STOP      = 30    # 时间止损天数
-DV_RSI_BUY_LOW    = 30    # RSI 买入下限 (宽松: 35→30)
-DV_RSI_BUY_HIGH   = 60    # RSI 买入上限 (宽松: 55→60)
+DV_TIME_STOP      = 18    # V29: 30→18, 更快淘汰无效持仓
+DV_RSI_BUY_LOW    = 33    # V29: 30→33, RSI下限收窄
+DV_RSI_BUY_HIGH   = 52    # V29: 60→52, RSI上限收窄
+DV_SCORE_MIN      = 0.72  # V29: 0.60→0.72, 入场门槛提高
+DV_LONG_RET_MAX   = 0.0   # V29: 新增, 60d涨幅必须<0%
+DV_SHORT_RET_MIN  = -0.04 # V29: 新增, 20d跌幅必须<-4%
 
 
 def get_signal(df, sector=None, sector_momentum=None, regime='range'):
     """
-    红利策略买入信号。
+    红利策略买入信号 (V29)。
 
     检测:
-      1. 价格处于相对低位（近 60 日涨幅不大 或 近 20 日有回调）
+      1. V29: 价格处于相对低位（60d 下跌 AND 20d 明显回调）
       2. 成交量不异常（排除恐慌出逃）
-      3. RSI 在合理区间
-      4. 均线长期趋势不破
+      3. RSI 在 33-52 区间
+      4. V29: 价格低于 MA60（价值买入区间）
     """
     closes = df['close'].values
     vols   = df['volume'].values
@@ -60,8 +65,8 @@ def get_signal(df, sector=None, sector_momentum=None, regime='range'):
     if cur_price < config.PRICE_MIN or cur_price > config.PRICE_MAX:
         return None
 
-    # ---- 1. 价格处于相对低位 ----
-    # 近 60 日涨幅
+    # ---- V29: 硬门1 — 价格处于相对低位（AND 关系，不再是 OR） ----
+    # 近 60 日涨幅 < 0（必须下跌）
     if n >= DV_LOOKBACK + 1 and closes[-(DV_LOOKBACK + 1)] > 0:
         ret_60d = (cur_price / closes[-(DV_LOOKBACK + 1)] - 1)
     else:
@@ -73,14 +78,16 @@ def get_signal(df, sector=None, sector_momentum=None, regime='range'):
     else:
         ret_20d = 0
 
-    # 低位条件: 60日涨幅 < 5% 或 20日跌幅 > 3%
-    low_position = (ret_60d < 0.05) or (ret_20d < -0.03)
-    if not low_position:
+    # V29: 双重条件 — 60d必须下跌 AND 20d必须明显回调
+    if ret_60d >= DV_LONG_RET_MAX:
         return {
-            'action': 'HOLD',
-            'confidence': 0.0,
-            'score': 0.0,
-            'reason': 'DV_价格非低位(60d:%+.1f%% 20d:%+.1f%%)' % (ret_60d * 100, ret_20d * 100),
+            'action': 'HOLD', 'confidence': 0.0, 'score': 0.0,
+            'reason': 'DV_60d未下跌(%+.1f%%)' % (ret_60d * 100),
+        }
+    if ret_20d > DV_SHORT_RET_MIN:
+        return {
+            'action': 'HOLD', 'confidence': 0.0, 'score': 0.0,
+            'reason': 'DV_20d回调不足(%+.1f%%>%.0f%%)' % (ret_20d * 100, DV_SHORT_RET_MIN * 100),
         }
 
     # ---- 2. 成交量不异常放量 ----
@@ -89,11 +96,8 @@ def get_signal(df, sector=None, sector_momentum=None, regime='range'):
         vol_ratio = 1.0
 
     if vol_ratio >= 2.5:
-        # 异常放量，可能是利空出逃
         return {
-            'action': 'HOLD',
-            'confidence': 0.0,
-            'score': 0.0,
+            'action': 'HOLD', 'confidence': 0.0, 'score': 0.0,
             'reason': 'DV_异常放量(%.1f)可能利空' % vol_ratio,
         }
 
@@ -106,62 +110,61 @@ def get_signal(df, sector=None, sector_momentum=None, regime='range'):
         return None
 
     if rsi < DV_RSI_BUY_LOW:
-        # 太低，可能还有下跌空间，让 MR 去处理
         return {
-            'action': 'HOLD',
-            'confidence': 0.0,
-            'score': 0.0,
+            'action': 'HOLD', 'confidence': 0.0, 'score': 0.0,
             'rsi': round(rsi, 1),
             'reason': 'DV_RSI太低(%.0f)让MR处理' % rsi,
         }
 
     if rsi > DV_RSI_BUY_HIGH:
         return {
-            'action': 'HOLD',
-            'confidence': 0.0,
-            'score': 0.0,
+            'action': 'HOLD', 'confidence': 0.0, 'score': 0.0,
             'rsi': round(rsi, 1),
             'reason': 'DV_RSI偏高(%.0f)' % rsi,
         }
 
-    rsi_score = 1.0 - abs(rsi - 45) / 20.0  # RSI=45 时满分
+    rsi_score = 1.0 - abs(rsi - 42) / 20.0  # V29: RSI=42 时满分
     rsi_score = max(0.0, min(1.0, rsi_score))
 
-    # ---- 4. 均线长期趋势不破 ----
+    # ---- V29: 硬门4 — 价格必须低于 MA60（价值区间） ----
     ma20 = indicators.calc_sma(closes, 20)
     ma60 = indicators.calc_sma(closes, 60)
 
-    ma_ok = False
-    ma_score = 0.0
-    if ma60 is not None and cur_price > ma60:
-        ma_ok = True
-        ma_score = 0.4
-    elif ma20 is not None and ma60 is not None:
-        # MA20 接近 MA60，可能是支撑位
+    if ma60 is None:
+        return None
+    if cur_price >= ma60:
+        return {
+            'action': 'HOLD', 'confidence': 0.0, 'score': 0.0,
+            'reason': 'DV_价格高于MA60(%.2f>=%.2f)' % (cur_price, ma60),
+        }
+
+    # MA20 接近 MA60（均线收敛中的价值区域）
+    ma_converge = False
+    if ma20 is not None and ma60 > 0:
         spread = abs(ma20 - ma60) / ma60
-        if spread < 0.03:
-            ma_ok = True
-            ma_score = 0.2
+        if spread < 0.04:
+            ma_converge = True
 
-    # ---- 综合评分 ----
-    score = 0.20  # 基础分：已在低位
+    # ---- V29 综合评分 ----
+    score = 0.15  # 基础分：60d下跌+20d回调
 
-    score += 0.25 * rsi_score   # RSI 在合理区间
-    score += 0.20 * vol_score  # 成交量平稳
-    score += ma_score           # 均线支撑
-    score += 0.10 if ret_20d < -0.05 else 0.0  # 近期回调较大
-    score += 0.05 if vol_ok else 0.0           # 量能平稳加分
+    score += 0.25 * rsi_score       # RSI 在合理区间
+    score += 0.15 * vol_score       # 成交量平稳
+    score += 0.15 if ma_converge else 0.05  # 均线收敛加分
+    score += 0.10 if ret_20d < -0.08 else 0.0  # 20d跌超8%额外加分
+    score += 0.15 if ret_60d < -0.15 else 0.0  # 60d跌超15%深度价值
+    score += 0.10 if vol_ok else 0.0            # 量能平稳
 
     score = min(1.0, score)
 
-    if score >= 0.60:
-        reason_parts = ['低位']
-        if ret_20d < -0.05:
-            reason_parts.append('回调%.1f%%' % (ret_20d * 100))
+    if score >= DV_SCORE_MIN:
+        reason_parts = ['价值']
+        reason_parts.append('60d%+.1f%%' % (ret_60d * 100))
+        reason_parts.append('20d%+.1f%%' % (ret_20d * 100))
+        if ma_converge:
+            reason_parts.append('MA收敛')
         if vol_ok:
             reason_parts.append('量稳')
-        if ma_ok:
-            reason_parts.append('MA支撑')
         reason_parts.append('RSI=%.0f' % rsi)
 
         return {
@@ -177,19 +180,19 @@ def get_signal(df, sector=None, sector_momentum=None, regime='range'):
         'confidence': score,
         'score': round(score, 4),
         'rsi': round(rsi, 1),
-        'reason': 'DV_评分不足(%.3f)' % score,
+        'reason': 'DV_评分不足(%.3f<%.2f)' % (score, DV_SCORE_MIN),
     }
 
 
 def check_exit(df, pos_info, regime='range', context=None, today_str=None):
     """
-    红利策略出场逻辑。
+    红利策略出场逻辑 (V29)。
 
     出场条件:
-      1. 固定止损 5%
+      1. 固定止损 6%
       2. 固定止盈 10%
-      3. 时间止损（30 天无收益）
-      4. RSI 过热 > 75
+      3. 时间止损（18 天无收益）
+      4. RSI 过热 > 70 (V29: 75→70)
     """
     closes = df['close'].values
 
@@ -216,9 +219,9 @@ def check_exit(df, pos_info, regime='range', context=None, today_str=None):
             'reason': 'DV_止盈(%+.1f%%)' % (pnl * 100),
         }
 
-    # 3. RSI 过热
+    # 3. RSI 过热 (V29: 75→70, 防御股不需要太热)
     rsi = indicators.calc_rsi(closes, period=14)
-    if rsi is not None and rsi > 75:
+    if rsi is not None and rsi > 70:
         return {
             'action': 'SELL',
             'confidence': 0.7,
