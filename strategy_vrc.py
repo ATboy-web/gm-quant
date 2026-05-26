@@ -25,9 +25,9 @@ import indicators
 
 
 VRC_PERIOD       = 20     # 回看窗口
-VRC_DECLINE_MIN  = -0.10  # V29.8: 恢复巅峰参数
-VRC_VOL_SURGE    = 1.5    # V29.8: 恢复巅峰参数
-VRC_STOP_LOSS    = 0.04   # 硬止损 4%
+VRC_DECLINE_MIN  = -0.08  # V29.8: 8%回调触发
+VRC_VOL_SURGE    = 1.4    # V29.8: 1.4倍量
+VRC_STOP_LOSS    = 0.06   # V30.1: 4%→6%, 防止误杀非VRC持仓
 VRC_TIME_STOP    = 10     # 时间止损天数
 VRC_TAKE_PROFIT  = 0.08   # 止盈 8%
 VRC_TRAIL_PROFIT = 0.05   # 移动止盈线
@@ -93,8 +93,7 @@ def get_signal(df, sector=None, sector_momentum=None, regime='range'):
     
     reversal_confirmed = (
         is_green and
-        is_up_from_yesterday and
-        vol_surge_ratio >= VRC_VOL_SURGE
+        is_up_from_yesterday
     )
 
     # ---- RSI 检查 ----
