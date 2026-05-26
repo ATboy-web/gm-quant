@@ -153,8 +153,21 @@ class TradeExecutor:
 
             owner_strategy = info.get('strategy', 'MR')
             vote_result = fusion.vote_exit(mr_exit, mom_exit, vp_exit, regime,
-                                           owner_strategy=owner_strategy)
+                                           owner_strategy=owner_strategy,
+                                           bk_exit=bk_exit, dv_exit=dv_exit, rt_exit=rt_exit)
 
+            if vote_result['action'] == 'SELL':
+                # V29.8: Risk Committee only for strategy-driven exits (not stops)
+                reason = vote_result.get('reason', '')
+                if '止损' not in reason and 'time' not in reason.lower():
+                    try:
+                        from vibe_integration import get_vibe
+                        committee = get_vibe().review_exit(df, info, regime)
+                        if committee['action'] == 'HOLD':
+                            vote_result['action'] = 'HOLD'
+                            vote_result['reason'] += ' [Veto]'
+                    except Exception:
+                        pass
             if vote_result['action'] == 'SELL':
                 sells.append((sym, cur_price, vote_result, info))
 
