@@ -1,44 +1,12 @@
 """
-main.py - V24 六策略行业差异化融合框架
-
-  1. 新增反转确认策略(RT)
-  2. 6策略体系: MR + MOM + VP + BK + DV + RT
-  3. 化工/新能源/煤炭行业针对性优化（RT反转确认替代MR左侧抄底）
-
-  1. 新增突破策略(BK)和红利策略(DV)
-  2. 新能源/公用事业参数大幅优化
-  3. 高波动行业添加BK，低波动行业添加DV
-
-  1. 行业差异化: 12个行业各自配置策略参数（不再一套参数走天下）
-  2. 策略工厂: 根据行业+市场状态动态创建策略实例
-  3. 代码模块化: 交易逻辑抽离到 executor.py，主程序只做初始化+回调
-
-文件结构:
-  main.py          ← 初始化+回调
-  executor.py      ← 交易执行器（入场/出场/仓位）
-  sector_config.py ← 12个行业差异化策略配置
-  strategy_factory.py ← 策略工厂
-  strategy_mr.py   ← 均值回归策略
-  strategy_momentum.py ← 动量趋势策略
-  strategy_vp.py   ← 量价背离策略
-  strategy_breakout.py ← 突破策略 
-  strategy_dividend.py ← 红利策略 
-  strategy_reversal.py ← 反转确认策略
-  fusion.py        ← 投票融合引擎
-  config.py        ← 全局参数
-  indicators.py    ← 技术指标
-  stock_pool.py    ← 股票池
-  screener.py      ← 选股引擎
-  visualizer.py    ← 回测可视化
+main.py - V29.8 (VRC, 双账户仿真+回测)
 """
 
-import sys
-import os
+import sys, os
 from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gm.api import *
-
 import config
 import indicators
 import stock_pool
@@ -48,42 +16,31 @@ import executor
 import trace
 import gm_logger as logger
 
-# =============================================================================
-# 全局初始化
-# =============================================================================
-
 set_token(config.GM_TOKEN)
 
-SYMBOLS       = stock_pool.get_all_symbols()
+SYMBOLS       = stock_pool.get_all_symbols()[:49]  # GM limit 50
 SYMBOL_SECTOR = stock_pool.get_symbol_sector_map()
 MARKET_INDEX  = config.MARKET_INDEX
 
 exec_engine = executor.TradeExecutor()
-
 logger.setup_logger()
 log = logger.log
 
 log.info('=' * 56)
-log.info('  V24 六策略行业差异化融合框架')
-log.info('  策略: MR + MOM + VP + BK + DV + RT(反转确认)')
-log.info('  股票池: %d 只 / %d 行业', len(SYMBOLS), len(stock_pool.get_sector_list()))
+log.info('  V29.8 VRC+双账户 | MR+MOM+VRC+BK+DV+RT')
+log.info('  %d stocks / %d sectors', len(SYMBOLS), len(stock_pool.get_sector_list()))
+log.info('  SIM: %s', config.SIM_ACCOUNT_ID[:8] + '...')
 log.info('=' * 56)
 sector_config.print_summary()
 
-# ===== AI辅助开关 (终端启动时选择) =====
+# AI toggle
 _ai_choice = ''
 try:
-    _ai_choice = input('\n[AI辅助] 1=开启  2=关闭 (默认2): ').strip()
+    _ai_choice = input('\n[AI] 1=on 2=off (default 2): ').strip()
 except Exception:
     pass
-if _ai_choice == '1':
-    config.AI_ENABLED = True
-    print('  AI辅助: %s | 供应商:%s | 模型:%s' % (
-        '在线' if config.AI_API_KEY else '离线(无Key)',
-        config.AI_PROVIDER, config.AI_MODEL))
-else:
-    config.AI_ENABLED = False
-    print('  AI辅助: 已关闭')
+config.AI_ENABLED = (_ai_choice == '1')
+print('  AI: %s' % ('on' if config.AI_ENABLED else 'off'))
 print()
 
 
@@ -99,44 +56,37 @@ def init(context):
     context.stats      = {'total_trades': 0, 'wins': 0, 'losses': 0, 'total_pnl': 0.0}
     context.strategy_stats = {'MR':  {'wins': 0, 'total': 0},
                               'MOM': {'wins': 0, 'total': 0},
-                              'VP':  {'wins': 0, 'total': 0},
+                              'VRC': {'wins': 0, 'total': 0},
                               'BK':  {'wins': 0, 'total': 0},
                               'DV':  {'wins': 0, 'total': 0},
                               'RT':  {'wins': 0, 'total': 0}}
+    context.trades = []
+    context.daily_values = []
 
-    # ---- 模式检测 ----
+    # ---- Mode detection ----
     try:
-        _is_bt = (context.mode == MODE_BACKTEST)
+        is_bt = (context.mode == MODE_BACKTEST)
     except Exception:
-        _is_bt = True  # 默认按回测处理
+        is_bt = True
+    context.is_backtest = is_bt
 
-    context.is_backtest = _is_bt  # 供 _do_buys/_do_sell 判断是否需要 account_id
-    if _is_bt:
-        log.info('[模式] 回测模式')
-    else:
-        log.info('[模式] 仿真模式 — 每5分钟触发一次 (交易时段) | 账户:%s', config.SIM_ACCOUNT_ID)
-
-    # GM订阅限制50只, 前49只+大盘指数=50
-    _all = list(SYMBOLS)[:49] + [MARKET_INDEX]
-    subscribe(symbols=_all, frequency='1d', count=config.DATA_COUNT)
-    context.SYMBOLS = _all[:-1]  # 去掉大盘指数
-
-    # ---- 调度 ----
-    if not _is_bt:
-        # 仿真模式: 交易时段每5分钟检查一次
-        am = ['09:31','09:36','09:41','09:46','09:51','09:56',
-              '10:01','10:06','10:11','10:16','10:21','10:26',
-              '10:31','10:36','10:41','10:46','10:51','10:56',
-              '11:01','11:06','11:11','11:16','11:21','11:26']
-        pm = ['13:01','13:06','13:11','13:16','13:21','13:26',
-              '13:31','13:36','13:41','13:46','13:51','13:56',
-              '14:01','14:06','14:11','14:16','14:21','14:26',
-              '14:31','14:36','14:41','14:46','14:51','14:56']
-        for t in am + pm:
-            schedule(schedule_func=on_bar, date_rule='1d', time_rule=t + ':00')
-        log.info('[调度] 已注册 %d 个时点 (交易时段每5分钟)', len(am) + len(pm))
-    else:
+    if is_bt:
+        log.info('[Mode] BACKTEST')
         schedule(schedule_func=on_bar, date_rule='1d', time_rule='14:50:00')
+    else:
+        # Simulation mode: account set via GM terminal connection
+        log.info('[Mode] SIM | account=%s', config.SIM_ACCOUNT_ID[:8] + '...')
+        # Self-scheduling loop: runs continuously every 1 second
+        log.info('[Mode] SIM 24x7 | account=%s', config.SIM_ACCOUNT_ID[:8] + '...')
+        context._loop_count = 0
+        context._next_schedule = None
+        schedule(schedule_func=on_bar, date_rule='1d', time_rule='09:30:01')
+        log.info('[Schedule] self-chaining loop started')
+
+    # Subscribe 49 stocks + 1 index = 50
+    all_syms = list(SYMBOLS) + [MARKET_INDEX]
+    subscribe(symbols=all_syms, frequency='1d', count=config.DATA_COUNT)
+    context.SYMBOLS = all_syms[:-1]
 
     context.on_backtest_finished = on_backtest_finished
 
@@ -146,16 +96,21 @@ def init(context):
 # =============================================================================
 
 def on_bar(context, bars=None):
+    # Guard against overlapping executions
+    if getattr(context, '_busy', False):
+        return
+    context._busy = True
     try:
         _on_bar_impl(context, bars)
     except Exception as e:
         import traceback
-        log.error('[异常] on_bar: %s', e)
+        log.error('[ERR] on_bar: %s', e)
         traceback.print_exc()
+    finally:
+        context._busy = False
 
 
 def _on_bar_impl(context, bars=None):
-    # Step 0: 当前日期
     try:
         if bars and len(bars) > 0:
             today = bars[0].bob.strftime('%Y-%m-%d')
@@ -167,15 +122,12 @@ def _on_bar_impl(context, bars=None):
     context.data_cache = {}
     context._today = today
 
-    # Step 1: 预加载数据
     loaded = _preload_data(context)
-
-    # Step 2: 市场状态
     context.regime = _detect_regime(context)
     regime = context.regime
     regime_cfg = config.REGIME_PARAMS.get(regime, config.REGIME_PARAMS['range'])
 
-    # Step 3: 检查出场（使用 executor）
+    # Step 3: Check exits
     sells = exec_engine.check_exits(
         context.pos_info, context.data_cache, regime, context, today
     )
@@ -185,34 +137,42 @@ def _on_bar_impl(context, bars=None):
 
     exec_engine.cleanup_cooldowns(today)
 
-    # Step 4: 行业动量
+    # Step 4: Sector momentum
     sector_momentum = screener.calc_sector_momentum(context)
 
-    # Step 5: 选股入场（使用 executor）
+    # Step 5: Find buy candidates
     try:
         acct = config.SIM_ACCOUNT_ID if not context.is_backtest else None
         cash = get_cash(account_id=acct)
-        trace.heartbeat(len(context.pos_info), cash.available, cash.nav, getattr(context, '_sentiment', None))
+        trace.heartbeat(len(context.pos_info), cash.available, cash.nav, None)
     except Exception:
         trace.heartbeat(len(context.pos_info), 0, 0, None)
+
     max_pos = regime_cfg['max_positions']
     occupied = set(context.sector_pos.keys())
     if len(context.pos_info) < max_pos:
         candidates = exec_engine.find_buy_candidates(
             context.SYMBOLS, occupied, context.pos_info,
-            context.data_cache, sector_momentum, regime,
-            today_str=getattr(context, '_today', '')
+            context.data_cache, sector_momentum, regime
         )
         _do_buys(context, candidates, max_pos)
 
-    # 状态
     pos_count = len(context.pos_info)
-    log.info('[状态] %s | %s | 数据:%d只 | 持仓:%d/%d',
-             today, regime, loaded, pos_count, max_pos)
+    _prev = getattr(context, '_last_pos_count', -1)
+    if pos_count != _prev:
+        log.info('[State] %s | %s | loaded:%d | pos:%d/%d',
+                 today, regime, loaded, pos_count, max_pos)
+        context._last_pos_count = pos_count
+
+    # Self-scheduling: next tick in 1 second (sim only)
+    if not context.is_backtest:
+        from datetime import datetime, timedelta
+        next_t = (datetime.now() + timedelta(seconds=1)).strftime('%H:%M:%S')
+        schedule(schedule_func=on_bar, date_rule='1d', time_rule=next_t)
 
 
 # =============================================================================
-# 数据获取辅助
+# Data helpers
 # =============================================================================
 
 def _preload_data(context, symbols=None):
@@ -244,59 +204,54 @@ def _detect_regime(context):
     df = _get_bar_data(context, MARKET_INDEX)
     if df is None:
         return 'range'
-    closes = df['close'].values
     return indicators.classify_regime(
-        closes,
+        df['close'].values,
         ma_period=config.REGIME_MA_PERIOD,
         bear_threshold=config.REGIME_BEAR_THRESHOLD
     )
 
 
 # =============================================================================
-# 交易执行
+# Trade execution
 # =============================================================================
 
 def _do_buys(context, candidates, max_pos):
-    """执行买入。"""
     remaining = max_pos - len(context.pos_info)
     if remaining <= 0:
         return
 
-    # get_cash() 在部分 SDK 版本/仿真模式下会报 "无效的ACCOUNT_ID"
-    # → 仿真模式显式传入 account_id 解决
     try:
         acct = config.SIM_ACCOUNT_ID if not context.is_backtest else None
         cash_info = get_cash(account_id=acct)
         available_cash = float(cash_info.available)
     except Exception as e:
-        log.warning('[资金] get_cash() 失败, 跳过本次买入: %s', e)
+        log.warning('[Cash] get_cash failed, skip buys: %s', e)
         return
+
     taken_sectors = set(context.sector_pos.keys())
     taken_count = 0
 
     for c in candidates:
         if taken_count >= remaining:
             break
-
         sector = c['sector']
         if sector in taken_sectors:
             continue
 
         sym   = c['symbol']
         price = c['price']
-
         qty = exec_engine.calc_position_size(c, available_cash, remaining - taken_count)
         if qty < 100:
             continue
 
-        order_volume(
-            symbol=sym, volume=qty,
-            side=OrderSide_Buy,
-            order_type=OrderType_Market,
-            position_effect=PositionEffect_Open
-        )
-        try: trace.buy(c.get('best_strategy','?'), sym, price, c.get('position_pct',0), len(c.get('voters',[])), context.regime)
-        except: pass
+        order_volume(symbol=sym, volume=qty, side=OrderSide_Buy,
+                     order_type=OrderType_Market, position_effect=PositionEffect_Open,
+                     account=acct if acct else "")
+        try:
+            trace.buy(c.get('best_strategy','?'), sym, price,
+                      c.get('position_pct',0), len(c.get('voters',[])), context.regime)
+        except Exception:
+            pass
 
         entry_date = getattr(context, '_today', str(context.now.strftime('%Y-%m-%d')))
         vol_group = stock_pool.get_sector_volatility_group(sector)
@@ -311,19 +266,17 @@ def _do_buys(context, candidates, max_pos):
         context.sector_pos[sector] = sym
         taken_sectors.add(sector)
         taken_count += 1
-        exec_engine.record_buy(sym)  # V26: 追踪交易次数
 
         rsi_str = ' RSI=%.0f' % c['rsi'] if c.get('rsi') else ''
-        log.info('[买入] %s | %s(%s) | %s | 策略:%s | %.2f×%d%s',
+        log.info('[BUY] %s | %s(%s) | %s | %s | %.2f x %d%s',
                  sym, sector, vol_group, c['reason'],
                  c['best_strategy'], price, qty, rsi_str)
 
 
 def _do_sell(context, sym, price, reason, info):
-    """执行卖出。"""
     vol = 0
+    acct = config.SIM_ACCOUNT_ID if not context.is_backtest else None
     try:
-        acct = config.SIM_ACCOUNT_ID if not context.is_backtest else None
         all_positions = get_position(account_id=acct)
         if all_positions:
             for pos in all_positions:
@@ -331,78 +284,72 @@ def _do_sell(context, sym, price, reason, info):
                     vol = int(pos.volume)
                     break
     except Exception as e:
-        log.warning('[卖出] get_position() 失败, 仅记录不平仓: %s', e)
+        log.warning('[Sell] get_position failed: %s', e)
 
     context.pos_info.pop(sym, None)
-    sector = info.get('sector', SYMBOL_SECTOR.get(sym, '未知'))
+    sector = info.get('sector', SYMBOL_SECTOR.get(sym, 'unknown'))
     if sector in context.sector_pos:
         del context.sector_pos[sector]
 
     pnl_pct = (price - info['cost']) / info['cost'] * 100
 
     if vol > 0:
-        order_volume(
-            symbol=sym, volume=vol,
-            side=OrderSide_Sell,
-            order_type=OrderType_Market,
-            position_effect=PositionEffect_Close
-        )
+        order_volume(symbol=sym, volume=vol, side=OrderSide_Sell,
+                     order_type=OrderType_Market, position_effect=PositionEffect_Close,
+                     account=acct if acct else "")
 
     strat = info.get('strategy', '?')
-    log.info('[卖出] %s | %s | %s | 价%.2f | %+.2f%% | %s',
+    log.info('[SELL] %s | %s | %s | %.2f | %+.2f%% | %s',
              sym, sector, reason, price, pnl_pct, strat)
-    try: trace.sell(strat, sym, pnl_pct/100, reason, context.regime)
-    except: pass
+    try:
+        trace.sell(strat, sym, pnl_pct/100, reason, context.regime)
+    except Exception:
+        pass
 
-    # V28: 通知执行器记录交易结果，触发连亏熔断
-    # 使用 context._today 而非局部变量 today（_do_sell 中 today 不在作用域内）
     exec_engine.note_trade_result(pnl_pct / 100, getattr(context, '_today', ''))
 
     context.stats['total_trades'] += 1
     context.stats['total_pnl'] += pnl_pct
     if pnl_pct > 0:
         context.stats['wins'] += 1
-        context.strategy_stats[strat]['wins'] += 1
+        if strat in context.strategy_stats:
+            context.strategy_stats[strat]['wins'] += 1
     else:
         context.stats['losses'] += 1
-    context.strategy_stats[strat]['total'] += 1
+    if strat in context.strategy_stats:
+        context.strategy_stats[strat]['total'] += 1
 
 
 # =============================================================================
-# 回测完成
+# Backtest finished
 # =============================================================================
 
 def on_backtest_finished(context, indicator):
     s = context.stats
     pos_count = len(context.pos_info)
     log.info('=' * 56)
-    log.info('  回测结束 — V24 六策略行业差异化融合框架')
+    log.info('  Backtest Done - V29.8 VRC')
     log.info('=' * 56)
-    log.info('  总交易: %d | 胜: %d | 负: %d | 胜率: %.1f%%',
+    log.info('  Trades: %d | Win: %d | Loss: %d | WR: %.1f%%',
              s['total_trades'], s['wins'], s['losses'],
-             (s['wins'] / s['total_trades'] * 100) if s['total_trades'] > 0 else 0)
-    log.info('  累计盈亏: %+.2f%%', s['total_pnl'])
-    log.info('  剩余持仓: %d 只', pos_count)
-    log.info('  ---- 策略分项 ----')
-    for name in ['MR', 'MOM', 'VP', 'BK', 'DV', 'RT']:
+             (s['wins']/s['total_trades']*100) if s['total_trades']>0 else 0)
+    log.info('  Cum PnL: %+.2f%%', s['total_pnl'])
+    log.info('  Remaining: %d pos', pos_count)
+    log.info('  ---- By Strategy ----')
+    for name in ['MR','MOM','VRC','BK','DV','RT']:
         ss = context.strategy_stats[name]
         if ss['total'] > 0:
-            log.info('  %s: 交易%d 胜率%.1f%%',
-                     name, ss['total'], ss['wins'] / ss['total'] * 100)
-    try:
-        nav = context.account().nav
-        log.info('  最终净值: %.2f', nav)
-    except Exception:
-        pass
+            log.info('  %s: %d trades WR %.1f%%',
+                     name, ss['total'], ss['wins']/ss['total']*100)
     log.info('=' * 56)
 
 
 def handle_error(context, error_code, error_msg, **kwargs):
-    log.error('[错误] code=%s msg=%s', error_code, error_msg)
+    log.error('[Error] code=%s msg=%s', error_code, error_msg)
 
 
 # =============================================================================
-# 回测入口
+# Entry
 # =============================================================================
 
 if __name__ == '__main__':
