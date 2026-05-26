@@ -374,3 +374,83 @@ def classify_regime(closes, ma_period=60, bear_threshold=-0.08):
         return 'bull'    # 价格在均线上方 → 牛市
 
     return 'range'       # 其余 → 震荡
+
+
+# =============================================================================
+# V30.4: 增强K线形态识别 (借鉴 Vibe-Trading pattern_tool)
+# =============================================================================
+
+def detect_candlestick(open_, high, low, close, prev_open=None, prev_close=None):
+    """
+    综合K线形态检测: doji, hammer, bullish/bearish engulfing。
+
+    Args:
+        open_: 当日开盘价 (float)
+        high:  当日最高价
+        low:   当日最低价
+        close: 当日收盘价
+        prev_open:  前日开盘价 (engulfing需要)
+        prev_close: 前日收盘价 (engulfing需要)
+
+    Returns:
+        dict: {'doji': bool, 'hammer': bool, 'engulf_bull': bool, 'engulf_bear': bool}
+    """
+    body = abs(close - open_)
+    total_range = high - low
+    upper_shadow = high - max(open_, close)
+    lower_shadow = min(open_, close) - low
+
+    result = {'doji': False, 'hammer': False, 'engulf_bull': False, 'engulf_bear': False}
+
+    if total_range <= 0:
+        return result
+
+    # Doji: 实体/总幅度 < 10%
+    if body / total_range < 0.10:
+        result['doji'] = True
+
+    # Hammer: 下影线 > 2x实体, 上影线 < 实体
+    if lower_shadow > 2 * body and upper_shadow < body and body > 0:
+        result['hammer'] = True
+
+    # Engulfing (需要前日数据)
+    if prev_open is not None and prev_close is not None:
+        prev_body = abs(prev_close - prev_open)
+        # Bullish engulfing: 前日阴线 + 今日阳线 + 吞噬
+        if (prev_close < prev_open and close > open_
+                and open_ <= prev_close and close >= prev_open
+                and body > prev_body):
+            result['engulf_bull'] = True
+        # Bearish engulfing: 前日阳线 + 今日阴线 + 吞噬
+        if (prev_open < prev_close and close < open_
+                and open_ >= prev_close and close <= prev_open
+                and body > prev_body):
+            result['engulf_bear'] = True
+
+    return result
+
+
+def detect_peaks_valleys(closes, window=5):
+    """
+    检测价格序列中的峰点和谷点 (借鉴 Vibe-Trading)。
+
+    Args:
+        closes: np.ndarray or list of close prices
+        window: 半窗口大小
+
+    Returns:
+        dict: {'peaks': [indices], 'valleys': [indices]}
+    """
+    n = len(closes)
+    if n < 2 * window + 1:
+        return {'peaks': [], 'valleys': []}
+
+    peaks, valleys = [], []
+    for i in range(window, n - window):
+        seg = closes[i - window:i + window + 1]
+        if closes[i] == max(seg):
+            peaks.append(i)
+        if closes[i] == min(seg):
+            valleys.append(i)
+
+    return {'peaks': peaks, 'valleys': valleys}
