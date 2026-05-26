@@ -29,6 +29,8 @@ FILES_TO_PUSH = [
     "strategy_breakout.py",
     "strategy_dividend.py",
     "strategy_reversal.py",
+    "strategy_vrc.py",        # V29.7: VRC replaces VP
+    "strategy_sr.py",         # V29.8: SR experimental
     "strategy_factory.py",
     # 琛屼笟閰嶇疆 & 铻嶅悎 & 鎵ц
     "sector_config.py",
