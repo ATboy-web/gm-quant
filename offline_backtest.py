@@ -1,10 +1,11 @@
 """
 offline_backtest.py - V20 离线回测脚本
 
-V20 改进:
+V30 改进:
   1. 新增反转确认策略(RT)
-  2. 6策略体系: MR + MOM + VP + BK + DV + RT
-  3. 化工/新能源/煤炭行业针对性优化
+  2. 7策略体系: MR + MOM + VP + VRC + BK + DV + RT
+  3. VP策略引入多维度背离检测引擎(OBV/RSI/MACD)
+  4. screener新增MultiDimensionScreener五维评分
 
 V19.2 改进:
   1. 新增突破策略(BK)和红利策略(DV)
@@ -53,9 +54,9 @@ MARKET_INDEX = config.MARKET_INDEX
 SYMBOL_SECTOR_MAP = stock_pool.get_symbol_sector_map()
 
 print('=' * 60)
-print('  V20 离线回测 — 六策略行业差异化融合框架')
-print('  策略: MR + MOM + VP + BK + DV + RT')
-print('  V20: RT反转确认 + 弱势行业优化')
+print('  V30 离线回测 — 七策略多维度融合框架')
+print('  策略: MR + MOM + VP + VRC + BK + DV + RT')
+print('  V30: VP背离引擎 + 五维评分 + 风控委员会')
 print('  股票池: %d 只 / %d 行业' % (len(SYMBOLS), len(stock_pool.get_sector_list())))
 print('=' * 60)
 sector_config.print_summary()
@@ -113,6 +114,14 @@ class V19BacktestEngine:
         # V19 执行器
         self.exec_engine = executor.TradeExecutor()
 
+        # V29.10: 风险委员会 (仿 Vibe-Trading)
+        try:
+            import risk_manager
+            self.risk_manager = risk_manager.RiskCommittee(initial_capital=start_cash)
+        except Exception as e:
+            print('[Risk] 风控模块加载失败: %s' % e)
+            self.risk_manager = None
+
         if MARKET_INDEX in data:
             self.bar_dates = list(data[MARKET_INDEX]['bob'].dt.strftime('%Y-%m-%d'))
 
@@ -124,6 +133,7 @@ class V19BacktestEngine:
             'MR':  {'wins': 0, 'total': 0, 'pnl': 0.0},
             'MOM': {'wins': 0, 'total': 0, 'pnl': 0.0},
             'VRC':  {'wins': 0, 'total': 0, 'pnl': 0.0},
+            'VP':  {'wins': 0, 'total': 0, 'pnl': 0.0},
             'BK':  {'wins': 0, 'total': 0, 'pnl': 0.0},
             'DV':  {'wins': 0, 'total': 0, 'pnl': 0.0},
             'RT':  {'wins': 0, 'total': 0, 'pnl': 0.0},
@@ -133,9 +143,16 @@ class V19BacktestEngine:
 
     def run(self):
         print('[引擎] 开始回测...')
+        import traceback
         for i, date_str in enumerate(self.bar_dates):
-            self._daily_bar(date_str, i)
-            self._record_daily_value(date_str, i)
+            try:
+                self._daily_bar(date_str, i)
+                self._record_daily_value(date_str, i)
+            except Exception as e:
+                print('[异常] %s 交易日处理失败: %s' % (date_str, e))
+                traceback.print_exc()
+                # 继续下一个交易日，不中断回测
+                continue
 
             if (i + 1) % 50 == 0:
                 total_val = self.daily_values[-1]['total'] if self.daily_values else 0
@@ -143,8 +160,32 @@ class V19BacktestEngine:
                 ret = (total_val - self.initial_cash) / self.initial_cash * 100
                 print('  [%s] 进度 %d/%d | 净值 %.0f (%+.1f%%) | 持仓 %d'
                       % (date_str, i + 1, len(self.bar_dates), total_val, ret, pos_count))
+                # Write progress file for live monitor
+                self._write_progress(date_str, i + 1, len(self.bar_dates), total_val, ret, pos_count)
 
-        self._print_summary()
+        # Progress file for live monitor
+        import os as _os
+        _log_dir = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'logs')
+        _os.makedirs(_log_dir, exist_ok=True)
+        self._progress_file = _os.path.join(_log_dir, 'bt_progress.json')
+
+        try:
+            self._print_summary()
+        except Exception as e:
+            print('[错误] _print_summary 失败: %s' % e)
+            traceback.print_exc()
+
+    def _write_progress(self, date_str, current, total, nav, ret, positions):
+        try:
+            import json
+            d = {"type":"backtest","date":str(date_str),"current":current,
+                 "total":total,"nav":nav,"ret":round(ret,2),"positions":positions,
+                 "trades":len(self.trades),"wins":self.stats.get("wins",0),
+                 "losses":self.stats.get("losses",0)}
+            with open(self._progress_file,'w') as f:
+                json.dump(d,f)
+        except Exception:
+            pass
 
     def _daily_bar(self, date_str, bar_idx):
         if bar_idx < config.DATA_COUNT:
@@ -199,6 +240,13 @@ class V19BacktestEngine:
         taken_sectors = set(p.get('sector') for p in self.positions.values())
         taken_count = 0
 
+        # V29.10: 计算行业持仓市值 (供风控审计)
+        sector_positions = {}
+        for p in self.positions.values():
+            sec = p.get('sector', '未知')
+            val = p.get('cost', 0) * p.get('vol', 0)
+            sector_positions[sec] = sector_positions.get(sec, 0) + val
+
         for c in candidates:
             if taken_count >= remaining:
                 break
@@ -215,6 +263,32 @@ class V19BacktestEngine:
             if qty < 100:
                 continue
 
+            # ---- V29.10: 风控委员会交易前审计 ----
+            if self.risk_manager:
+                candidate_for_audit = dict(c)
+                candidate_for_audit['qty'] = qty
+                # 波动率分组
+                sec_cfg = sector_config.SECTOR_CONFIGS.get(sector, {})
+                candidate_for_audit['vol_group'] = sec_cfg.get('vol_group', 'medium')
+
+                audit = self.risk_manager.audit_buy(
+                    candidate_for_audit,
+                    list(self.positions.values()),
+                    sector_positions,
+                    today_str=date_str
+                )
+                if not audit['approved']:
+                    print('[风控拒绝] %s | %s | %s' % (date_str, sym, audit['reason']))
+                    continue
+                # 调整仓位
+                adj = audit.get('adjusted_size', 1.0)
+                if adj != 1.0:
+                    new_qty = int((qty * adj) / 100) * 100
+                    if new_qty >= 100:
+                        qty = new_qty
+                        print('[风控调整] %s | %s | 仓位调整至 %.0f%% (%d股)'
+                              % (date_str, sym, adj * 100, qty))
+
             self.cash -= price * qty
             self.positions[sym] = {
                 'vol': qty, 'cost': price, 'peak': price,
@@ -223,6 +297,8 @@ class V19BacktestEngine:
                 'voters': c.get('voters', []),
                 'confidence': c['confidence'],
             }
+            # 更新行业持仓市值
+            sector_positions[sector] = sector_positions.get(sector, 0) + price * qty
             taken_sectors.add(sector)
             taken_count += 1
 
@@ -260,6 +336,14 @@ class V19BacktestEngine:
         strat = pos.get('strategy', '?')
 
         self.cash += price * vol
+
+        # V29.10: 更新风控状态
+        if self.risk_manager:
+            total_val = self.cash
+            for s, p in self.positions.items():
+                if s != sym:
+                    total_val += p.get('cost', 0) * p.get('vol', 0)
+            self.risk_manager.update_state(total_val, recent_trade_pnl=pnl_pct / 100)
 
         self.trades.append({
             'date': date_str, 'symbol': sym, 'side': 'SELL',
@@ -320,6 +404,10 @@ class V19BacktestEngine:
             'market': market_value, 'total': total_value,
         })
 
+        # V29.10: 每日重置风控日内状态
+        if self.risk_manager and bar_idx > 0:
+            self.risk_manager.reset_daily(total_value)
+
     def _print_summary(self):
         if not self.daily_values:
             print('[结果] 无交易记录')
@@ -354,7 +442,7 @@ class V19BacktestEngine:
 
         # ---- 策略分项 ----
         print('  ---- 策略分项 ----')
-        for name in ['MR', 'MOM', 'VRC', 'BK', 'DV', 'RT']:
+        for name in ['MR', 'MOM', 'VRC', 'VP', 'BK', 'DV', 'RT']:
             ss = self.strategy_stats[name]
             if ss['total'] > 0:
                 wr = ss['wins'] / ss['total'] * 100
@@ -369,6 +457,29 @@ class V19BacktestEngine:
                 wr = ss['wins'] / ss['total'] * 100
                 print('  %-6s: 交易%d 胜率%.1f%% 累计%+.1f%%'
                       % (sector, ss['total'], wr, ss['pnl']))
+
+        # ---- V29.8: Advanced Metrics (Vibe-Trading) ----
+        try:
+            from vibe_integration import AdvancedMetrics
+            equity = [dv['total'] for dv in self.daily_values]
+            trades = [{'pnl': t['pnl_pct'], 'type': t['side']} for t in self.trades]
+            m = AdvancedMetrics.calc_all(equity, trades, self.initial_cash)
+            print('  ---- 高级指标 (Vibe) ----')
+            print('  年化收益率: %+.2f%%' % m['annual_return'])
+            print('  夏普比率:   %.2f | 索提诺: %.2f | 卡玛: %.2f'
+                  % (m['sharpe'], m['sortino'], m['calmar']))
+            print('  盈利因子:   %.2f | 最大连亏: %d笔 | 年化波动: %.1f%%'
+                  % (m['profit_factor'], m['max_consecutive_loss'], m['volatility']))
+        except Exception:
+            pass
+
+        # ---- V29.10: 统计验证引擎 (仿 Vibe-Trading) ----
+        try:
+            import stats_validator
+            report = stats_validator.comprehensive_validation(self.trades, self.daily_values)
+            self.validation_report = report
+        except Exception as e:
+            print('[Validator] 统计验证失败: %s' % e)
 
         print('=' * 60)
 
@@ -402,3 +513,79 @@ if __name__ == '__main__':
 
     engine = V19BacktestEngine(all_data, start_cash=config.BACKTEST_CASH)
     engine.run()
+
+    # Visualizer (skip with --no-visual flag)
+    import sys
+    if '--no-visual' not in sys.argv:
+        try:
+            import visualizer
+            visualizer.launch_visualizer()
+        except Exception as e:
+            print('[Visualizer] Failed to launch:', e)
+
+
+def quick_eval(param_overrides=None, silent=True, all_data=None):
+    """
+    快速评估 — 供 optimizer.py 调用。
+    修改 config 参数 → 运行轻量回测 → 返回 (return, maxdd, sharpe, trades)
+
+    Args:
+        param_overrides: {key: value} 参数覆盖
+        silent: 是否静默输出
+        all_data: 可选，已下载的数据字典(复用，避免重复下载)
+
+    注意: 此函数不会修改全局 config, 使用参数覆盖运行回测。
+    """
+    import config as cfg
+    original = {}
+
+    if param_overrides:
+        for k, v in param_overrides.items():
+            attr = k.upper() if k.islower() else k
+            if hasattr(cfg, attr):
+                original[k] = getattr(cfg, attr)
+                setattr(cfg, attr, v)
+
+    try:
+        if not silent:
+            print('[QuickEval] 参数: %s' % (param_overrides or 'default'))
+
+        if all_data is None:
+            all_data = preload_all_data(cfg.BACKTEST_START[:10], cfg.BACKTEST_END[:10])
+
+        if MARKET_INDEX not in all_data or len(all_data) < 5:
+            return 0.0, -0.2, 0.0, 999
+
+        engine = V19BacktestEngine(all_data, start_cash=cfg.BACKTEST_CASH)
+        engine.run()
+
+        if not engine.daily_values:
+            return 0.0, -0.2, 0.0, 999
+
+        df = pd.DataFrame(engine.daily_values)
+        final_val = df['total'].iloc[-1]
+        ret = (final_val - engine.initial_cash) / engine.initial_cash * 100
+
+        df['cummax'] = df['total'].cummax()
+        df['drawdown'] = (df['total'] - df['cummax']) / df['cummax']
+        maxdd = float(df['drawdown'].min())
+
+        sells = [t for t in engine.trades if t['side'] == 'SELL']
+        if sells:
+            daily_rets = np.array([t['pnl_pct'] / 100 for t in sells])
+            sharpe = float(np.mean(daily_rets) / (np.std(daily_rets) + 1e-10) * np.sqrt(252))
+        else:
+            sharpe = 0.0
+
+        return ret, maxdd, sharpe, len(sells)
+
+    except Exception as e:
+        if not silent:
+            print('[QuickEval] Error: %s' % e)
+        return 0.0, -0.3, 0.0, 999
+
+    finally:
+        # 恢复原始参数
+        for k, v in original.items():
+            attr = k.upper() if k.islower() else k
+            setattr(cfg, attr, v)
