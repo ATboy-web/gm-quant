@@ -13,6 +13,7 @@ executor.py - V19 交易执行器
 
 import config
 import indicators
+import math
 import stock_pool
 import sector_config
 import sentiment_engine
@@ -258,6 +259,14 @@ class TradeExecutor:
 
                 rsi_val = mr_sig.get('rsi', 0) if mr_sig and 'rsi' in mr_sig else 0
 
+                # V30.4: ATR计算（用于波动率仓位调整）
+                atr_val = 0
+                try:
+                    h = df['high'].values; l = df['low'].values; c = df['close'].values
+                    atr_val = indicators.calc_atr(h, l, c, 14) or 0
+                except Exception:
+                    pass
+
                 candidates.append({
                     'symbol': sym,
                     'sector': sector,
@@ -268,6 +277,7 @@ class TradeExecutor:
                     'reason': vote_result['reason'],
                     'best_strategy': best_strat,
                     'rsi': rsi_val,
+                    'atr': atr_val,
                 })
 
         candidates.sort(key=lambda x: x['confidence'], reverse=True)
@@ -354,7 +364,10 @@ class TradeExecutor:
 
     def calc_position_size(self, candidate, available_cash, remaining_slots):
         """
-        根据行业配置计算买入数量。
+        波动率自适应仓位计算 (V30.4 借鉴 Vibe-Trading EqualVol)。
+
+        高波动股票 → 减仓, 低波动股票 → 加仓。
+        调整范围: 50%~200% of base size
 
         Args:
             candidate:      买入候选 dict
@@ -371,6 +384,16 @@ class TradeExecutor:
         # 行业基础仓位 × 融合仓位比例
         base_pct = sector_cfg.get('position_pct', config.POSITION_PCT)
         pos_pct = base_pct * candidate['position_pct']
+
+        # V30.4: 波动率调整 — 高波动减仓，低波动加仓
+        vol_adj = 1.0
+        if 'atr' in candidate and candidate['atr'] and price > 0:
+            stock_vol = candidate['atr'] / price  # 日波动率
+            # 目标波动率约 3%，偏离时按平方根调整
+            target_vol = getattr(config, 'TARGET_DAILY_VOL', 0.03)
+            vol_adj = math.sqrt(target_vol / max(stock_vol, 0.005))
+            vol_adj = max(0.5, min(2.0, vol_adj))  # 50%~200% 范围
+        pos_pct *= vol_adj
 
         allocated = available_cash * pos_pct / max(remaining_slots, 1)
         if allocated < price * 100:
