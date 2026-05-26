@@ -1,7 +1,17 @@
 """
-strategy_vp.py - 量价背离策略 (V18)
+strategy_vp.py - 量价背离策略 (V29.3)
 
 量价分析选手：通过价格与成交量的背离关系捕捉转折点。
+
+V29.3 修复 (2026-05-25):
+  回退 V29.2 的 executor 改动 — 置信度公式改回 avg(confidences)。
+  V29.2 的 max+共识加成导致多策略信号排名溢价，
+  MR 资金被挤压，收益从 +105% 跌至 -44%。
+  VP 趋势硬门已在 V29.2 移除（单策略证实有害），本版本保留。
+
+V29.2 修复 (2026-05-25):
+  已移除 V29.1 趋势硬门 — 单策略回测证实有害 (+8.29%→+0.75%)。
+  趋势硬门误杀 VP 核心逻辑 (底部背离时价必然在MA20下方)。
 
 核心逻辑:
   买入（底部背离）:
@@ -39,6 +49,9 @@ def get_signal(df, sector=None, sector_momentum=None, regime='range'):
       2. 缩量止跌: 连续3日缩量 + 价格横盘/微跌
       3. 背离后的放量确认（加分项）
     """
+    if not config.STRATEGY_VP_ENABLED:
+        return None
+
     closes = df['close'].values
     vols   = df['volume'].values
     highs  = df['high'].values
@@ -142,9 +155,14 @@ def get_signal(df, sector=None, sector_momentum=None, regime='range'):
     if not rsi_ok:
         score *= 0.5
 
+    # V29.2: 已移除 V29.1 趋势硬门
+    # 单策略回测证明: VP 独立 +8.29% vs 带硬门 +0.75%
+    # 趋势硬门惩罚 VP 最核心的底部反转信号(价在MA20下+下跌中=背离), 反噬策略逻辑
+    # VP 亏损根因是多策略竞争中的仓位歧视, 已通过 executor V29.2 投票机制修复
+
     score = min(1.0, score)
 
-    if score >= 0.50:
+    if score >= 0.75:   # V29.6: 0.72→0.75, 极限收紧只留最优信号
         return {
             'action': 'BUY',
             'confidence': score,
