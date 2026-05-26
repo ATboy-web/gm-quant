@@ -1,197 +1,171 @@
-# gm-quant — 六策略行业差异化量化交易框架
+# GM V30.3 — 六策略行业差异化量化交易系统
 
-[![Version](https://img.shields.io/badge/version-V29.4-blue)](https://github.com/ATboy-web/gm-quant/releases)
-[![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
-[![GM SDK](https://img.shields.io/badge/GM%20SDK-3.0.183-green)](https://www.myquant.cn/)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![CI](https://github.com/ATboy-web/gm-quant/actions/workflows/check.yml/badge.svg)](https://github.com/ATboy-web/gm-quant/actions)
+基于 [掘金量化（GoldMiner）](https://www.myquant.cn/)平台的 A 股量化交易策略，从 V1 迭代至 V30.3。
 
-基于[掘金量化](https://www.myquant.cn/) SDK 的 A 股多策略融合交易系统。覆盖 **6 个策略**、**12 个行业**、**96 只股票**，通过行业差异化配置和策略配额制实现信号多元化。支持离线回测、可视化分析、AI 辅助决策。
+> **当前版本**：V30.3 · 六策略并行 + dict 工厂 + 行业参数注入  
+> **离线回测**：+10.56%（2024-04-08 ~ 2025-05-30，初始资金 25,000 元）
 
 ---
 
-## 快速开始
+## 策略概览
 
-```bash
-# 1. 克隆仓库
-git clone https://github.com/ATboy-web/gm-quant.git
-cd gm-quant
-
-# 2. 安装依赖
-pip install -e .          # 安装 gm-quant + 核心依赖
-# 或手动安装:
-pip install gm -U numpy pandas matplotlib
-
-# 3. 配置 Token
-# 编辑 config.py，替换 GM_TOKEN = '你的token'
-# push_to_github.py 中 PAT 使用占位符，本地使用时替换为你的 Token
-
-# 4. 运行离线回测
-python offline_backtest.py
-```
-
-### 环境要求
-
-- Python 3.8+ (推荐 3.13)
-- 掘金量化 SDK >= 3.0.183
-- 掘金终端后台运行 (回测模式无需连接交易)
-- pip 依赖: numpy, pandas, matplotlib
-
----
-
-## 策略架构
-
-```
-                     ┌─────────────────────────┐
-                     │     Strategy Factory     │
-                     │   (行业差异化策略创建)      │
-                     └───────────┬─────────────┘
-                                 │
-         ┌───────────────────────┼───────────────────────┐
-         │                       │                       │
-    ┌────▼────┐  ┌────────┐  ┌──▼───┐  ┌──────┐  ┌────▼───┐  ┌──────┐
-    │   MR    │  │  MOM   │  │  VP  │  │  BK  │  │   DV   │  │  RT  │
-    │均值回归  │  │动量趋势  │  │量价背离│  │ 突破  │  │ 红利   │  │反转确认│
-    └────┬────┘  └───┬────┘  └──┬───┘  └──┬───┘  └───┬────┘  └───┬──┘
-         │           │          │         │          │          │
-         └───────────┴──────────┴─────────┴──────────┴──────────┘
-                                 │
-                     ┌───────────▼─────────────┐
-                     │  Six-Strategy Fusion    │
-                     │  (加权投票 + 行业权重)     │
-                     └───────────┬─────────────┘
-                                 │
-                     ┌───────────▼─────────────┐
-                     │    Trade Executor       │
-                     │  (入场/出场/风险控制)      │
-                     └─────────────────────────┘
-```
-
-| 策略 | 类型 | 核心逻辑 | RSI 区间 | 适用行业 |
-|------|------|----------|----------|----------|
-| **MR** 均值回归 | 左侧抄底 | 六因子超卖评分 + RSI < 33 | 全行业 | 12/12 |
-| **VP** 量价背离 | 量价分析 | 价格新低 + 成交量萎缩 + 背离确认 | 底背离 | 12/12 |
-| **BK** 突破 | 趋势跟随 | 价格突破 + 量能确认 + 均线多头 | 高波动 | 5/12 |
-| **DV** 红利 | 防御配置 | 低位 AND 条件 + 价格 < MA60 | 低波动 | 6/12 |
-| **RT** 反转确认 | 右侧确认 | 下跌后放量反弹 + 规则底确认 | 中波动 | 3/12 |
-| **MOM** 动量 | 趋势加速 | 4 道硬门 + 金叉确认 (严厉限制) | 趋势 | 4/12 |
-
----
-
-## V29.4 回测结果
-
-**回测区间**: 2024-01-01 ~ 2026-05-22 | **初始资金**: ¥25,000 | **交易日**: 575
-
-| 指标 | 数值 |
+| 项目 | 说明 |
 |------|------|
-| 总收益率 | **+8.82%** |
-| 最大回撤 | -9.21% |
-| 胜率 | 45.3% |
-| 总交易 | 553 笔 (276 卖出) |
-| 平均盈亏 | +0.56% |
+| 策略类型 | 六策略并行 + 投票融合（MR + MOM + VRC + BK + DV + RT） |
+| 交易市场 | A 股主板（SHSE 600/601/603，SZSE 000/001/002） |
+| 资金门槛 | 25,000 元（排除创业板/科创板） |
+| 数据频率 | 日线 |
+| 回测区间 | 2024-04-08 ~ 2025-05-30 |
+| 初始资金 | 25,000 元 |
+| SDK 版本 | GM 3.0.183（C SDK 3.8.15） |
+| 回测 | **+10.56%**（最大回撤 -8.41%，157 笔交易） |
 
-### 策略分项
+### 版本演进（关键里程碑）
 
-| 策略 | 交易笔数 | 胜率 | 累计盈亏 | 状态 |
-|------|----------|------|----------|------|
-| MR 均值回归 | 122 | 49.2% | **+84.2%** | 核心盈利引擎 |
-| BK 突破 | 67 | 40.3% | +51.6% | 稳定贡献 |
-| RT 反转确认 | 12 | 50.0% | +28.6% | 低频高质量 |
-| DV 红利 | 22 | 40.9% | +14.8% | 防御有效 |
-| MOM 动量 | 1 | 100% | +3.1% | 严格限制中 |
-| VP 量价背离 | 52 | 42.3% | **-28.2%** | 待修复 |
+| 版本 | 收益 | 回撤 | 交易 | 胜率 | 关键变化 |
+|------|------|------|------|------|----------|
+| V18.1 | +9.95% | -5.02% | 247 | 52.2% | 三策略 + MR投票融合 |
+| V24 | +8.82% | -9.21% | 276 | 45.3% | dict工厂 + 行业参数注入 + 6策略 |
+| V29 | +16.69% | -9.43% | 340 | 49.7% | VRC替换VP + 参数优化 |
+| **V30.3** | **+10.56%** | **-8.41%** | 157 | 38.9% | 4 Bug修复 (见下文) |
 
-### 行业分项 (Top 5)
+> V30.3 区间更短(2024-04 ~ 2025-05, HS300 +8.6%)，V29 跑了更长的区间(至2026-05, HS300 +37%)
 
-| 行业 | 交易 | 胜率 | 累计 |
-|------|------|------|------|
-| 科技 | 26 | 53.8% | +49.9% |
-| 煤炭 | 43 | 48.8% | +36.4% |
-| 金融 | 14 | 71.4% | +36.1% |
-| 有色 | 33 | 42.4% | +31.7% |
-| 消费 | 11 | 45.5% | +27.5% |
+---
+
+## V30.3 核心架构
+
+```
+                    ┌─────────────────────────────────┐
+                    │         49 只股票候选池          │
+                    │        (12 行业差异化配置)        │
+                    └──────────────┬──────────────────┘
+                                   │
+                    ┌──────────────▼──────────────────┐
+                    │      StrategyFactory (dict)      │
+                    │   每个行业注入差异化参数          │
+                    └──┬───┬───┬───┬───┬───┬─────────┘
+                       │   │   │   │   │   │
+              MR  MOM  VRC  BK  DV  RT  — 六策略并行
+                       │   │   │   │   │   │
+                    ┌──▼───▼───▼───▼───▼───▼─────────┐
+                    │   Executor 投票融合 + 配额制      │
+                    │   V30.3: 6策略参加退出投票        │
+                    └─────────────────────────────────┘
+```
+
+### 六策略矩阵
+
+| 策略 | 代号 | 核心逻辑 | 收益贡献 | 交易数 |
+|------|------|----------|----------|--------|
+| 均值回归 | MR | RSI(14)超卖+六因子评分，ATR跟踪止盈 | +65.0% | 73 |
+| 红利策略 | DV | 低波动+高股息+回调入场 | +41.1% | 22 |
+| 反转确认 | RT | 双底/头肩底确认后入 | +22.5% | 17 |
+| 成交量反转 | VRC | 下跌衰竭+放量阳线确认 | -5.2% | 19 |
+| 动量趋势 | MOM | 多头排列+放量+金叉 | -25.8% | 6 |
+| 突破策略 | BK | 放量突破N日新高 | -14.7% | 20 |
+
+### 行业参数注入机制 (V24→V30.3 恢复)
+
+每个行业的策略权重和参数（RSI买入、ATR止损倍数、时间止损天数等）通过 `sector_config.py` 配置，`strategy_factory.py` (dict架构) 自动注入到策略模块。12个行业独立配置，一行业一策略。
+
+---
+
+## V30.3 修复记录
+
+V30 初始版本因三个复合Bug导致 -2.28% 亏损：
+
+| Bug | 症状 | 修复 |
+|-----|------|------|
+| strategy_factory 从 dict→list 精简 | 丢失行业参数注入 | 恢复 V24 dict 架构 (315行) |
+| Claw/ 多余 VP 策略 → 7策略双背离 | 信号互相稀释 | 移除 VP，回归6策略 |
+| BK/DV/RT 退出信号被 executor 丢弃 | 非MR/MOM/VRC位置退出判断不全 | 扩展 fusion vote_exit 为6策略 |
+| VRC 4% 止损过紧 | 杀死所有非VRC持仓 | VRC_STOP_LOSS → 6% |
+| BK 在震荡市追高 | 虚假突破止损 | BK_VOL_SURGE 2.0, 门槛 0.65 |
+| MOM 假动量信号 | 震荡市频繁触发 | MOM_SCORE_MIN 0.65 |
+
+**修改的7个文件**：strategy_factory.py, sector_config.py, strategy_vrc.py, strategy_momentum.py, strategy_breakout.py, executor.py, fusion.py
 
 ---
 
 ## 项目结构
 
 ```
-gm-quant/
-├── config.py                  # 全局参数 + 回测/仿真模式 + AI 配置
-├── indicators.py              # 技术指标库 (RSI/ATR/MA/量比/形态识别)
-├── stock_pool.py              # 96 只股票候选池 + 股票名称映射
-├── screener.py                # 六因子选股打分引擎
-├── sentiment_engine.py        # 7 源舆情爬虫 + 情绪分析
-├── ai_assistant.py            # AI 联网搜索 + 股票排名
-│
-├── strategy_mr.py             # 均值回归策略 (六因子评分)
-├── strategy_momentum.py       # 动量趋势策略 (4 道硬门)
-├── strategy_vp.py             # 量价背离策略 (量价关系)
-├── strategy_breakout.py       # 突破策略 (趋势跟随)
-├── strategy_dividend.py       # 红利策略 (防御配置)
-├── strategy_reversal.py       # 反转确认策略 (右侧确认)
-├── strategy_factory.py        # 策略工厂 (行业差异化创建)
-│
-├── sector_config.py           # 12 行业差异化策略配置
-├── fusion.py                  # 六策略投票融合引擎
-├── executor.py                # 交易执行引擎 + 策略配额制
-│
-├── main.py                    # 策略主程序 (回测/仿真自适应)
-├── offline_backtest.py        # 离线回测脚本
-├── visualizer.py              # 回测可视化 GUI (tkinter+matplotlib)
-├── gm_logger.py               # 统一日志模块
-├── trace.py                   # 心跳 + 状态跟踪
-├── push_to_github.py          # GitHub API 推送脚本
-│
-├── CHANGELOG.md               # 版本历史
-├── README.md                  # 项目说明
-├── LICENSE                    # MIT
-├── SECURITY.md                # 安全策略
-├── CONTRIBUTING.md            # 贡献指南
-├── CODE_OF_CONDUCT.md         # 行为准则
-│
-├── versions/                  # 历史版本归档
-├── deploy/                    # 部署脚本
-├── .github/                   # Actions + Projects
-├── logs/                      # 回测日志
-└── .workbuddy/                # WorkBuddy 数据
+├── config.py              # V29.8 全局参数配置
+├── sector_config.py       # 12行业差异化策略配置
+├── strategy_factory.py    # V30.1 dict架构策略工厂（行业参数注入）
+├── executor.py            # V30 交易执行引擎 + 策略配额
+├── fusion.py              # V30 六策略退出投票
+├── indicators.py          # 技术指标库 (RSI/ATR/MA/量比/形态识别)
+├── stock_pool.py          # 49只精选股票池 (12行业)
+├── screener.py            # 六因子选股打分引擎
+├── strategy_mr.py         # 均值回归策略
+├── strategy_momentum.py   # 动量趋势策略 (V29收紧)
+├── strategy_vrc.py        # 成交量反转确认策略
+├── strategy_breakout.py   # 突破策略 (V30.3收紧)
+├── strategy_dividend.py   # 红利策略
+├── strategy_reversal.py   # 反转确认策略
+├── strategy_vp.py         # 量价背离(已弃用，VRC替换)
+├── strategy_sr.py         # 支撑阻力策略(实验)
+├── sentiment_engine.py    # 7源舆情爬虫+情绪分析
+├── ai_assistant.py        # AI联网搜索+分析
+├── advanced_factors.py    # 高级因子库
+├── vibe_integration.py    # Vibe-Trading 集成
+├── stats_validator.py     # Monte Carlo+Bootstrap验证
+├── risk_manager.py        # 风控委员会
+├── optimizer.py           # Grid Search优化器
+├── live_monitor.py        # 实时监控窗口
+├── visualizer.py          # tkinter回测可视化
+├── gm_logger.py           # 统一日志模块
+├── main.py                # GM终端主程序（仿真/回测）
+├── offline_backtest.py    # 离线回测脚本
+├── push_to_github.py      # GitHub REST API 推送
+├── setup.py               # setup脚本
+├── trace.py               # 诊断追踪
+├── config.yaml            # 掘金终端配置
+├── deploy/                # 部署同步脚本
+├── versions/              # 历史版本归档
+├── history/               # 废弃策略归档
+├── vibe_source/           # Vibe-Trading 参考
+└── logs/                  # 回测日志
 ```
 
 ---
 
-## 历史版本对比
+## 使用方法
 
-| 版本 | 总收益 | 回撤 | 胜率 | 卖出 | 关键改进 |
-|------|--------|------|------|------|----------|
-| V29.4 | +8.82% | -9.21% | 45.3% | 276 | 策略配额制 + 牛市适配 |
-| V29 | +16.69% | -9.43% | 49.7% | 340 | MOM/DV 重构 + 权重重构 |
-| V28 | +17.07% | -8.26% | 46.3% | 471 | V26/V27 参数中点 |
-| V26 | +19.24% | -7.8% | ~47% | 448 | 仓位优化 + 入场收紧 |
+### 1. GM 终端回测
 
-完整版本历史见 [CHANGELOG.md](CHANGELOG.md)
+在掘金量化终端中打开 `main.py`，配置参数后点击"回测"。
 
----
+### 2. 离线验证
 
-## 已知问题
+```bash
+python3 offline_backtest.py
+```
 
-- [ ] **VP 策略持续亏损** (-28.2%) — 三个版本未改善，需策略逻辑层面重写
-- [ ] **MR 收益未恢复到 V29 水平** — entry_threshold 可进一步放宽
-- [ ] **MOM 过度限制** — 1 笔交易过于保守
+不依赖掘金终端，直接用 `history()` API 拉取数据模拟回测。
 
----
+### 3. 推送代码到 GitHub
 
-## 贡献
+```bash
+python3 push_to_github.py
+```
 
-欢迎提 Issue 或 PR！详见 [CONTRIBUTING.md](CONTRIBUTING.md)
-
-## 安全
-
-发现漏洞？请**不要公开提交 Issue**，通过 [Security Advisory](https://github.com/ATboy-web/gm-quant/security/advisories/new) 私下报告。详见 [SECURITY.md](SECURITY.md)
-
-## 许可
-
-MIT License — 详见 [LICENSE](LICENSE)
+通过 GitHub REST API 推送文件。
 
 ---
 
-[Built with 掘金量化 SDK](https://www.myquant.cn/) | [Releases](https://github.com/ATboy-web/gm-quant/releases) | [Security](SECURITY.md) | Python 3.8+ | 96 stocks × 6 strategies × 12 sectors
+## 技术依赖
+
+| 依赖 | 版本 |
+|------|------|
+| GM Python SDK | 3.0.183 |
+| GM C SDK | 3.8.15 |
+| Python | ≥ 3.10 |
+
+---
+
+## License
+
+Private — 个人量化研究用途。
