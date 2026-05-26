@@ -74,14 +74,33 @@ def init(context):
         log.info('[Mode] BACKTEST')
         schedule(schedule_func=on_bar, date_rule='1d', time_rule='14:50:00')
     else:
-        # Simulation mode: account set via GM terminal connection
         log.info('[Mode] SIM | account=%s', config.SIM_ACCOUNT_ID[:8] + '...')
-        # Self-scheduling loop: runs continuously every 1 second
-        log.info('[Mode] SIM 24x7 | account=%s', config.SIM_ACCOUNT_ID[:8] + '...')
-        context._loop_count = 0
-        context._next_schedule = None
-        schedule(schedule_func=on_bar, date_rule='1d', time_rule='09:30:01')
-        log.info('[Schedule] self-chaining loop started')
+        # Launch live monitor in background
+        try:
+            import subprocess, os
+            subprocess.Popen(
+                ['python', os.path.join(os.path.dirname(__file__), 'live_monitor.py')],
+                creationflags=subprocess.CREATE_NEW_CONSOLE if hasattr(subprocess, 'CREATE_NEW_CONSOLE') else 0
+            )
+            log.info('[Monitor] live window launched')
+        except Exception as e:
+            log.warning('[Monitor] failed: %s', e)
+        # 10-sec schedule (AM 9:31-11:30, PM 13:01-15:00)
+        times = []
+        for h in range(9, 12):
+            ms = 31 if h == 9 else 0
+            me = 60 if h < 11 else 31
+            for m in range(ms, me):
+                for s in range(0, 60, 10):
+                    times.append('%02d:%02d:%02d' % (h, m, s))
+        for h in range(13, 15):
+            for m in range(1 if h == 13 else 0, 60):
+                for s in range(0, 60, 10):
+                    times.append('%02d:%02d:%02d' % (h, m, s))
+        log.info('[Schedule] registering %d slots...', len(times))
+        for t in times:
+            schedule(schedule_func=on_bar, date_rule='1d', time_rule=t)
+        log.info('[Schedule] done')
 
     # Subscribe 49 stocks + 1 index = 50
     all_syms = list(SYMBOLS) + [MARKET_INDEX]
@@ -96,18 +115,12 @@ def init(context):
 # =============================================================================
 
 def on_bar(context, bars=None):
-    # Guard against overlapping executions
-    if getattr(context, '_busy', False):
-        return
-    context._busy = True
     try:
         _on_bar_impl(context, bars)
     except Exception as e:
         import traceback
         log.error('[ERR] on_bar: %s', e)
         traceback.print_exc()
-    finally:
-        context._busy = False
 
 
 def _on_bar_impl(context, bars=None):
@@ -163,12 +176,6 @@ def _on_bar_impl(context, bars=None):
         log.info('[State] %s | %s | loaded:%d | pos:%d/%d',
                  today, regime, loaded, pos_count, max_pos)
         context._last_pos_count = pos_count
-
-    # Self-scheduling: next tick in 1 second (sim only)
-    if not context.is_backtest:
-        from datetime import datetime, timedelta
-        next_t = (datetime.now() + timedelta(seconds=1)).strftime('%H:%M:%S')
-        schedule(schedule_func=on_bar, date_rule='1d', time_rule=next_t)
 
 
 # =============================================================================
