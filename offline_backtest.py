@@ -470,6 +470,13 @@ class V19BacktestEngine:
                   % (m['sharpe'], m['sortino'], m['calmar']))
             print('  盈利因子:   %.2f | 最大连亏: %d笔 | 年化波动: %.1f%%'
                   % (m['profit_factor'], m['max_consecutive_loss'], m['volatility']))
+            # V30.4: P/L Ratio (借鉴Vibe-Trading, avg win / avg loss)
+            sell_trades_pnl = [t['pnl_pct'] for t in self.trades if t['side'] == 'SELL']
+            wins = [p for p in sell_trades_pnl if p > 0]
+            losses = [p for p in sell_trades_pnl if p < 0]
+            if wins and losses:
+                pl_ratio = (sum(wins) / len(wins)) / (abs(sum(losses)) / len(losses))
+                print('  P/L比:      %.2f (均盈/均亏)' % pl_ratio)
         except Exception:
             pass
 
