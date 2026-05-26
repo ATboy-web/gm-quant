@@ -144,7 +144,7 @@ def web_search(query, max_results=5):
             if i >= max_results:
                 break
             # 跳过 DDG 自身链接和广告
-            if url.startswith('https://duckduckgo.com') or 'ad-' in url:
+            if 'duckduckgo.com' in url or 'ad-' in url:
                 continue
             # 清理标题
             title = title.replace('<b>', '').replace('</b>', '').strip()
