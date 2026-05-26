@@ -219,7 +219,7 @@ def get_signal(df, sector=None, sector_momentum=None, regime='range'):
 
     score = min(1.0, score)
 
-    if score >= 0.75:   # V26: 0.60→0.75, 大幅收紧(原胜率37.5%), 仅完美信号触发
+    if score >= 0.60:
         reason_parts = ['反转确认']
         if recent_golden_cross:
             reason_parts.append('金叉')
