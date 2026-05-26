@@ -115,23 +115,26 @@ def vote_entry(mr_signal, mom_signal, vp_signal, regime='range'):
     }
 
 
-def vote_exit(mr_exit, mom_exit, vp_exit, regime='range', owner_strategy=None):
+def vote_exit(mr_exit, mom_exit, vp_exit, regime='range', owner_strategy=None,
+              bk_exit=None, dv_exit=None, rt_exit=None):
     """
-    对三策略的出场信号进行投票，决定是否卖出。
+    对六策略的出场信号进行投票，决定是否卖出。
+
+    V30.1 修复: 扩展为6策略 (MR, MOM, VRC, BK, DV, RT),
+              之前 BK/DV/RT 退出信号被丢弃导致误杀
 
     V18.1 出场规则:
       1. 归属策略喊 SELL → 直接卖（优先权）
-      2. 任何止损/止盈信号 → 直接卖（安全阀，防止策略不匹配导致亏损扩大）
+      2. 任何止损/止盈信号 → 直接卖（安全阀）
       3. 非归属策略的趋势/时间类出场 → 需要交叉验证（≥2个策略同意）
-      
-    区分「止损类」（高优先级）和「趋势/时间类」（低优先级）：
-      - 止损类: ATR止损、跌破MA20、固定止损、VP止损 — 直接执行
-      - 趋势类: 时间止损、RSI过热 — 需要归属策略或交叉验证
     """
     signals = [
         ('MR',  mr_exit),
         ('MOM', mom_exit),
-        ('VP',  vp_exit),
+        ('VRC', vp_exit),
+        ('BK',  bk_exit),
+        ('DV',  dv_exit),
+        ('RT',  rt_exit),
     ]
 
     # 止损关键词（高优先级，任何策略都可以触发）
