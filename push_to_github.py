@@ -25,12 +25,10 @@ FILES_TO_PUSH = [
     "screener.py",
     # 鍏瓥鐣?    "strategy_mr.py",
     "strategy_momentum.py",
-    "strategy_vp.py",
     "strategy_breakout.py",
     "strategy_dividend.py",
     "strategy_reversal.py",
     "strategy_vrc.py",        # V29.7: VRC replaces VP
-    "strategy_sr.py",         # V29.8: SR experimental
     "strategy_factory.py",
     # 琛屼笟閰嶇疆 & 铻嶅悎 & 鎵ц
     "sector_config.py",
