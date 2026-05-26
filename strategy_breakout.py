@@ -1,5 +1,5 @@
 """
-strategy_breakout.py - 突破策略 (V19.2)
+strategy_breakout.py - 突破策略 
 
 适用于高波动行业（有色/科技/军工/新能源），
 捕捉价格突破关键阻力位后的趋势加速行情。
@@ -23,7 +23,7 @@ import indicators
 
 # 突破策略参数
 BK_BREAKOUT_PERIOD = 20    # 突破检测窗口（N日新高）
-BK_VOL_SURGE       = 1.5   # 突破日最小量比
+BK_VOL_SURGE       = 2.0   # V30.2: 1.5→2.0, 震荡市只追强放量突破
 BK_STOP_LOSS       = 0.07  # 固定止损 7%
 BK_TAKE_PROFIT     = 0.15  # 固定止盈 15%
 BK_FAIL_DAYS       = 3     # 突破失败检测天数
@@ -114,7 +114,7 @@ def get_signal(df, sector=None, sector_momentum=None, regime='range'):
 
     score = min(1.0, score)
 
-    if score >= 0.55:
+    if score >= 0.65:   # V30.2: 0.60→0.65, 震荡市收紧入场
         reason_parts = ['突破%d日高' % BK_BREAKOUT_PERIOD]
         if vol_breakout:
             reason_parts.append('放量%.1f' % vol_ratio)
