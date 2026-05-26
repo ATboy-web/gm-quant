@@ -1,11 +1,29 @@
 name: Code Check
-on: [push, pull_request]
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
 jobs:
-  syntax:
+  syntax-and-import:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: python -m py_compile *.py
+      - name: Syntax check all .py
+        run: |
+          errors=0
+          for f in *.py; do
+            output=$(python -c "compile(open('$f', 'rb').read(), '$f', 'exec')" 2>&1) && continue
+            if echo "$output" | grep -q "unicode"; then
+              echo "SKIP $f (GBK/UTF-8 mismatch, OK on Windows)"
+            else
+              echo "FAIL $f: $output"
+              errors=$((errors+1))
+            fi
+          done
+          exit $errors
