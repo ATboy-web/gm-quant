@@ -14,7 +14,7 @@ import screener
 import sector_config
 import executor
 import trace
-import gm_logger as logger
+import trace as logger  # V30.5: gm_logger merged into trace
 
 set_token(config.GM_TOKEN)
 
