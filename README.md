@@ -104,13 +104,13 @@ vibe_integration.py     Vibe高级指标
 
 | 仓库 | ⭐ | 借鉴 |
 |------|-----|------|
-| vnpy | 40.9k | 分层风控引擎, 策略模板 |
-| abu | 17.3k | UMP裁判系统, 仓位管理, 滑点 |
-| Qbot | 17.5k | RSRS指标, 多渠通知 |
-| QUANTAXIS | 10.6k | Hurst/ADX/CHO 高级指标 |
-| Vibe-Trading | 8.7k | 本地数据加载, K线形态 |
-| ai_quant_trade | 5.7k | 交易日历, 真实费用 |
-| panda_factor | 2.7k | 因子标准化/中性化/IC分析 |
+| [vnpy](https://github.com/vnpy/vnpy) | 40.9k | 分层风控引擎, 策略模板 |
+| [abu](https://github.com/bbfamily/abu) | 17.3k | UMP裁判系统, 仓位管理, 滑点 |
+| [Qbot](https://github.com/UFund-Me/Qbot) | 17.5k | RSRS指标, 多渠通知 |
+| [QUANTAXIS](https://github.com/yutiansut/QUANTAXIS) | 10.6k | Hurst/ADX/CHO 高级指标 |
+| [Vibe-Trading](https://github.com/HKUDS/Vibe-Trading) | 8.7k | 本地数据加载, K线形态 |
+| [ai_quant_trade](https://github.com/charliedream1/ai_quant_trade) | 5.7k | 交易日历, 真实费用 |
+| [panda_factor](https://github.com/PandaAI-Tech/panda_factor) | 2.7k | 因子标准化/中性化/IC分析 |
 
 ---
 
