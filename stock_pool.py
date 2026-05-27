@@ -1094,3 +1094,15 @@ if __name__ == '__main__':
 
 
 
+
+def get_symbol_name(symbol):
+    """返回股票简称 (简化版: 使用symbol本身)"""
+    # 常见股票名称映射
+    _names = {
+        'SHSE.600000': '浦发银行', 'SHSE.600036': '招商银行', 'SHSE.600030': '中信证券',
+        'SHSE.600519': '贵州茅台', 'SHSE.601318': '中国平安', 'SHSE.600276': '恒瑞医药',
+        'SHSE.600585': '海螺水泥', 'SHSE.600887': '伊利股份', 'SHSE.601166': '兴业银行',
+        'SHSE.600900': '长江电力', 'SHSE.603288': '海天味业', 'SHSE.600309': '万华化学',
+        'SZSE.000858': '五粮液', 'SZSE.002415': '海康威视', 'SZSE.300750': '宁德时代',
+    }
+    return _names.get(symbol, symbol.split('.')[-1] if '.' in symbol else symbol)
