@@ -247,3 +247,165 @@ class RiskCommittee:
             'date': 'NOW',
         })
         return {'brake_activated': True, 'reason': reason}
+"""
+risk_engine.py - V30.5 分层风控引擎 (借鉴 vnpy 风控模块)
+
+三层风控:
+  L1: 订单级 — 单笔仓位上限, 涨跌停检查
+  L2: 持仓级 — 个股止损/止盈, 行业集中度
+  L3: 账户级 — 日亏损上限, 回撤熔断, 连续亏损熔断
+
+vnpy特色: 事件驱动 + 预检(pre-check) + 事后(after-trade)
+"""
+
+from datetime import datetime
+
+
+class RiskEngine:
+    """分层风控引擎"""
+
+    def __init__(self, initial_capital: float = 25000):
+        self.initial_capital = initial_capital
+        self.peak_capital = initial_capital
+
+        # L1: 订单限制
+        self.max_single_position_pct = 0.35   # 单票最大仓位 35%
+        self.min_price = 3.0                  # 最低股价
+        self.max_price = 200.0                # 最高股价
+
+        # L2: 持仓限制
+        self.max_positions = 5                # 最大持仓数
+        self.max_sector_exposure_pct = 0.40   # 单行业最大占比 40%
+        self.stop_loss_pct = 0.08             # 个股止损 8%
+        self.take_profit_pct = 0.15           # 个股止盈 15%
+        self.trailing_stop_activate = 0.05    # 移动止盈触发 5%
+        self.trailing_stop_pct = 0.03         # 移动止盈回撤 3%
+
+        # L3: 账户限制
+        self.daily_loss_limit_pct = 0.05      # 日亏损上限 5%
+        self.max_drawdown_limit = 0.20        # 最大回撤熔断 20%
+        self.max_consecutive_losses = 5       # 连亏熔断
+        self.consecutive_loss_trades = 0       # 连续亏损计数器
+
+        # 状态
+        self.daily_pnl = 0.0
+        self.daily_trade_count = 0
+        self.last_trade_date = None
+        self.is_halted = False
+        self.halt_reason = ''
+
+    def reset_daily(self, date_str: str):
+        """每日重置"""
+        self.daily_pnl = 0.0
+        self.daily_trade_count = 0
+        self.last_trade_date = date_str
+        self.is_halted = False
+        self.halt_reason = ''
+
+    # === L1: 订单预检 ===
+    def check_order(self, symbol: str, price: float, qty: int, cash: float) -> tuple:
+        """
+        订单预检 — 返回 (approved: bool, reason: str)
+        """
+        if self.is_halted:
+            return False, self.halt_reason
+
+        if price < self.min_price:
+            return False, f'价格{price:.2f}<最低{self.min_price}'
+        if price > self.max_price:
+            return False, f'价格{price:.2f}>最高{self.max_price}'
+
+        pos_pct = (price * qty) / max(cash, 1)
+        if pos_pct > self.max_single_position_pct:
+            return False, f'仓位{pos_pct:.1%}>上限{self.max_single_position_pct:.0%}'
+
+        return True, 'OK'
+
+    # === L2: 持仓监控 ===
+    def check_position_exit(self, cost: float, current: float, peak: float,
+                            hold_days: int = 0) -> dict:
+        """
+        持仓止损止盈检查 — 返回 {action, reason}
+        """
+        pnl_pct = (current - cost) / cost
+
+        # 硬止损
+        if pnl_pct <= -self.stop_loss_pct:
+            return {'action': 'SELL', 'reason': f'RISK_止损({pnl_pct:.1%})'}
+
+        # 硬止盈
+        if pnl_pct >= self.take_profit_pct:
+            return {'action': 'SELL', 'reason': f'RISK_止盈({pnl_pct:.1%})'}
+
+        # 移动止盈
+        peak_pnl = (peak - cost) / cost
+        if peak_pnl >= self.trailing_stop_activate:
+            dd_from_peak = (current - peak) / peak
+            if dd_from_peak <= -self.trailing_stop_pct:
+                return {'action': 'SELL', 'reason': f'RISK_移动止盈(峰{peak_pnl:.1%}→{pnl_pct:.1%})'}
+
+        return {'action': 'HOLD', 'reason': ''}
+
+    def check_sector_exposure(self, sector: str, positions: dict) -> tuple:
+        """
+        行业集中度检查 — 返回 (approved, reason)
+        """
+        sector_value = sum(
+            pos.get('vol', 0) * pos.get('cost', 0)
+            for s, pos in positions.items()
+            if pos.get('sector') == sector
+        )
+        total_value = sum(pos.get('vol', 0) * pos.get('cost', 0) for s, pos in positions.items())
+        if total_value > 0:
+            exposure = sector_value / total_value
+            if exposure > self.max_sector_exposure_pct:
+                return False, f'{sector}行业集中度{exposure:.0%}>上限{self.max_sector_exposure_pct:.0%}'
+        return True, 'OK'
+
+    # === L3: 账户监控 ===
+    def check_account(self, current_capital: float, trade_pnl: float = None) -> tuple:
+        """
+        账户级风控 — 返回 (is_halted: bool, reason: str)
+        """
+        if trade_pnl is not None:
+            self.daily_pnl += trade_pnl
+
+        # 日亏损上限
+        if self.daily_pnl < -self.initial_capital * self.daily_loss_limit_pct:
+            self.is_halted = True
+            self.halt_reason = f'日亏损{self.daily_pnl:.0f}超过上限'
+            return True, self.halt_reason
+
+        # 连亏熔断
+        if trade_pnl is not None and trade_pnl < 0:
+            self.consecutive_loss_trades += 1
+        elif trade_pnl is not None and trade_pnl > 0:
+            self.consecutive_loss_trades = 0
+
+        if self.consecutive_loss_trades >= self.max_consecutive_losses:
+            self.is_halted = True
+            self.halt_reason = f'连续亏损{self.consecutive_loss_trades}笔'
+            return True, self.halt_reason
+
+        # 回撤熔断
+        self.peak_capital = max(self.peak_capital, current_capital)
+        dd = (self.peak_capital - current_capital) / self.peak_capital
+        if dd > self.max_drawdown_limit:
+            self.is_halted = True
+            self.halt_reason = f'回撤{dd:.1%}超过上限{self.max_drawdown_limit:.0%}'
+            return True, self.halt_reason
+
+        return False, 'OK'
+
+    def get_risk_report(self) -> dict:
+        """获取当前风控状态报告"""
+        return {
+            'is_halted': self.is_halted,
+            'halt_reason': self.halt_reason,
+            'daily_pnl': round(self.daily_pnl, 2),
+            'consecutive_losses': self.consecutive_loss_trades,
+            'peak_capital': round(self.peak_capital, 0),
+            'current_drawdown_pct': round(
+                (self.peak_capital - max(self.peak_capital * 0.5, 1)) / self.peak_capital * 100, 2
+            ),
+        }
