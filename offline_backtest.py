@@ -26,7 +26,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
-from gm.api import *
 
 import config
 import indicators
@@ -37,7 +36,6 @@ import executor
 import trace
 import strategy_mr
 import strategy_momentum
-import strategy_vp
 import strategy_breakout
 import strategy_dividend
 import strategy_reversal
@@ -47,7 +45,6 @@ import fusion
 # 全局设置
 # =============================================================================
 
-set_token(config.GM_TOKEN)
 
 SYMBOLS = stock_pool.get_all_symbols()
 MARKET_INDEX = config.MARKET_INDEX
@@ -63,36 +60,17 @@ sector_config.print_summary()
 
 
 # =============================================================================
-# 数据获取
+# 数据获取 (V30.4: 本地SQLite数据, 无需GM终端)
 # =============================================================================
 
-def fetch_history(symbol, start, end, freq='1d'):
-    try:
-        df = history(
-            symbol=symbol, frequency=freq,
-            start_time=start, end_time=end,
-            adjust=ADJUST_PREV, df=True
-        )
-        if df is not None and len(df) > 0:
-            df = df.sort_values('bob').reset_index(drop=True)
-            return df
-    except Exception:
-        pass
-    return None
+import local_data_loader
 
 
 def preload_all_data(start, end):
-    print('[数据] 正在下载历史数据...')
-    data = {}
+    """使用本地SQLite数据加载 (C:/lainghua/basic_data/day_bar/)。"""
+    print('[数据] 正在加载本地数据...')
     all_syms = list(SYMBOLS) + [MARKET_INDEX]
-
-    for i, sym in enumerate(all_syms):
-        df = fetch_history(sym, start, end)
-        if df is not None and len(df) >= config.MIN_DATA_BARS:
-            data[sym] = df
-        if (i + 1) % 10 == 0 or (i + 1) == len(all_syms):
-            print('  进度: %d/%d' % (i + 1, len(all_syms)))
-
+    data = local_data_loader.preload_all(start, end, all_syms, verbose=True)
     print('[数据] 完成: 成功 %d/%d' % (len(data), len(all_syms)))
     return data
 
@@ -470,13 +448,6 @@ class V19BacktestEngine:
                   % (m['sharpe'], m['sortino'], m['calmar']))
             print('  盈利因子:   %.2f | 最大连亏: %d笔 | 年化波动: %.1f%%'
                   % (m['profit_factor'], m['max_consecutive_loss'], m['volatility']))
-            # V30.4: P/L Ratio (借鉴Vibe-Trading, avg win / avg loss)
-            sell_trades_pnl = [t['pnl_pct'] for t in self.trades if t['side'] == 'SELL']
-            wins = [p for p in sell_trades_pnl if p > 0]
-            losses = [p for p in sell_trades_pnl if p < 0]
-            if wins and losses:
-                pl_ratio = (sum(wins) / len(wins)) / (abs(sum(losses)) / len(losses))
-                print('  P/L比:      %.2f (均盈/均亏)' % pl_ratio)
         except Exception:
             pass
 
@@ -521,12 +492,13 @@ if __name__ == '__main__':
     engine = V19BacktestEngine(all_data, start_cash=config.BACKTEST_CASH)
     engine.run()
 
-    # Visualizer (skip with --no-visual flag)
-    import sys
+    # Visualizer (V30.4: 传入 engine data, 自动转换)
     if '--no-visual' not in sys.argv:
         try:
             import visualizer
-            visualizer.launch_visualizer()
+            bt_data = visualizer.from_backtest_engine(engine)
+            elapsed = (engine.bar_dates[-1] - engine.bar_dates[0]).days if hasattr(engine, 'bar_dates') and engine.bar_dates else 0
+            visualizer.launch_visualizer(bt_data, elapsed_seconds=elapsed)
         except Exception as e:
             print('[Visualizer] Failed to launch:', e)
 
