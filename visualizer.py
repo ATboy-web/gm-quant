@@ -296,21 +296,24 @@ class BacktestVisualizer:
                                        style='TButton')
         self.save_log_btn.pack(side=tk.RIGHT, padx=5)
 
+        # V30.4: HTML报告导出
+        self.html_btn = ttk.Button(header, text='导出HTML报告',
+                                   command=self._export_html,
+                                   style='TButton')
+        self.html_btn.pack(side=tk.RIGHT, padx=5)
+
     def _build_charts(self, parent):
-        """构建图表区 — 三个图表: 净值曲线、策略统计、盈亏分布"""
-        # 上半部分: 概览卡片
+        """构建图表区 — 净值曲线 + 策略统计 + 盈亏分布 + 相关性"""
         cards_frame = ttk.Frame(parent, style='Dark.TFrame')
         cards_frame.pack(fill=tk.X, padx=2, pady=2)
-
         overview_card = ttk.Frame(cards_frame, style='Panel.TFrame')
         overview_card.pack(fill=tk.X, padx=2, pady=2)
-
         self._build_overview_cards(overview_card)
 
         # 净值曲线图
         self._build_equity_chart(parent)
 
-        # 底部: 策略统计 + 盈亏分布 (并排)
+        # 底部: 策略统计 + 盈亏分布 + 相关性 (三格)
         bottom_frame = ttk.Frame(parent, style='Dark.TFrame')
         bottom_frame.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
 
@@ -318,16 +321,29 @@ class BacktestVisualizer:
         bottom_paned.pack(fill=tk.BOTH, expand=True)
 
         strat_frame = ttk.Frame(bottom_paned, style='Dark.TFrame')
-        bottom_paned.add(strat_frame, weight=50)
+        bottom_paned.add(strat_frame, weight=40)
         self._build_strategy_chart(strat_frame)
 
+        corr_frame = ttk.Frame(bottom_paned, style='Dark.TFrame')
+        bottom_paned.add(corr_frame, weight=30)
+        self._build_correlation_chart(corr_frame)
+
         dist_frame = ttk.Frame(bottom_paned, style='Dark.TFrame')
-        bottom_paned.add(dist_frame, weight=50)
+        bottom_paned.add(dist_frame, weight=30)
         self._build_distribution_chart(dist_frame)
 
     def _build_overview_cards(self, parent):
-        """概览统计卡片"""
+        """概览统计卡片 (V30.4: 添加盈亏比和盈利因子)"""
         d = self.data
+        # 计算高级指标
+        sell_trades = [t for t in d.trades if t.side == 'SELL']
+        buys = [t.pnl for t in sell_trades if hasattr(t, 'pnl') and t.pnl > 0]
+        losses = [t.pnl for t in sell_trades if hasattr(t, 'pnl') and t.pnl < 0]
+        profit_factor = sum(buys) / abs(sum(losses)) if losses else 0
+        avg_win = np.mean(buys) if buys else 0
+        avg_loss = abs(np.mean(losses)) if losses else 0.01
+        pl_ratio = avg_win / avg_loss if avg_loss > 0.01 else 0
+
         cards_data = [
             ('总收益率', f'{d.total_return:+.2f}%',
              'Positive.TLabel' if d.total_return >= 0 else 'Negative.TLabel'),
@@ -336,6 +352,10 @@ class BacktestVisualizer:
             ('最大回撤', f'{d.max_drawdown:.2f}%', 'Negative.TLabel'),
             ('夏普比率', f'{d.sharpe_ratio:.2f}',
              'Positive.TLabel' if d.sharpe_ratio >= 0 else 'Negative.TLabel'),
+            ('盈利因子', f'{profit_factor:.2f}',
+             'Positive.TLabel' if profit_factor >= 1 else 'Negative.TLabel'),
+            ('P/L比', f'{pl_ratio:.2f}',
+             'Positive.TLabel' if pl_ratio >= 1 else 'Negative.TLabel'),
             ('交易次数', f'{len(d.trades)}',
              'StatBig.TLabel'),
             ('平均盈亏', f'{d.avg_profit:+.2f}%',
@@ -518,6 +538,63 @@ class BacktestVisualizer:
             spine.set_color(COLORS['grid'])
 
         canvas = FigureCanvasTkAgg(fig, parent)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+    def _build_correlation_chart(self, parent):
+        """V30.4: 策略日收益相关性热力图"""
+        chart_frame = ttk.Frame(parent, style='Panel.TFrame')
+        chart_frame.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+        ttk.Label(chart_frame, text='策略相关性',
+                  style='Header.TLabel').pack(anchor=tk.W, padx=10, pady=(5, 0))
+
+        # 按策略分组每日收益
+        strat_returns = {}
+        dates_set = set()
+        for t in self.data.trades:
+            if hasattr(t, 'strategy') and hasattr(t, 'pnl') and hasattr(t, 'date'):
+                s = t.strategy
+                if s not in strat_returns:
+                    strat_returns[s] = defaultdict(float)
+                strat_returns[s][t.date] += t.pnl
+                dates_set.add(t.date)
+
+        strategies = sorted(strat_returns.keys())
+        if len(strategies) < 2:
+            ttk.Label(chart_frame, text='策略数不足',
+                      style='StatLabel.TLabel').pack(pady=20)
+            return
+
+        # 构建日收益矩阵
+        all_dates = sorted(dates_set)
+        df = pd.DataFrame(index=all_dates)
+        for s in strategies:
+            df[s] = pd.Series(strat_returns[s], index=all_dates).fillna(0)
+
+        # 相关性矩阵
+        corr = df.corr()
+        n = len(strategies)
+
+        fig = Figure(figsize=(3.5, 3), dpi=100, facecolor=COLORS['panel_bg'])
+        ax = fig.add_subplot(111)
+
+        im = ax.imshow(corr.values, cmap='RdYlGn', vmin=-1, vmax=1, aspect='auto')
+        ax.set_xticks(range(n))
+        ax.set_yticks(range(n))
+        ax.set_xticklabels(strategies, fontsize=7, rotation=45)
+        ax.set_yticklabels(strategies, fontsize=7)
+
+        for i in range(n):
+            for j in range(n):
+                v = corr.values[i, j]
+                ax.text(j, i, f'{v:.2f}', ha='center', va='center',
+                        fontsize=8, fontweight='bold',
+                        color='white' if abs(v) > 0.5 else 'black')
+
+        ax.set_title('策略日收益相关性', color=COLORS['text'], fontsize=10, pad=10)
+        fig.tight_layout()
+
+        canvas = FigureCanvasTkAgg(fig, chart_frame)
         canvas.draw()
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
@@ -867,6 +944,81 @@ class BacktestVisualizer:
                 ])
 
         messagebox.showinfo('保存成功', f'日志已保存到:\n{log_path}')
+
+    def _export_html(self):
+        """V30.4: 导出独立HTML报告 (借鉴Vibe-Trading)"""
+        from tkinter import filedialog as fd
+        filename = fd.asksaveasfilename(
+            defaultextension='.html',
+            filetypes=[('HTML', '*.html')],
+            initialfile=f'gm_quant_report_{datetime.now():%Y%m%d}.html'
+        )
+        if not filename:
+            return
+
+        d = self.data
+        # 计算指标
+        sells = [t for t in d.trades if t.side == 'SELL']
+        wins = [t.pnl for t in sells if hasattr(t, 'pnl') and hasattr(t, 'pnl_pct') for t in [t]][:0]
+
+        # --- HTML模板 ---
+        html = f'''<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8">
+<title>gm-quant V30.4 回测报告</title>
+<style>
+body{{font-family:'Microsoft YaHei',sans-serif;background:#1a1a2e;color:#e0e0e0;margin:40px}}
+h1{{color:#e94560;border-bottom:2px solid #0f3460;padding-bottom:10px}}
+.card{{background:#16213e;border-radius:12px;padding:20px;margin:10px;display:inline-block;min-width:140px}}
+.card .val{{font-size:32px;font-weight:bold;margin:5px 0}}
+.card .lbl{{font-size:13px;color:#888}}
+.pos{{color:#e94560}}.neg{{color:#4ecca3}}
+table{{border-collapse:collapse;width:100%;margin:10px 0}}
+th{{background:#0f3460;padding:10px;text-align:left}}
+td{{padding:8px;border-bottom:1px solid #0f3460}}
+tr:hover{{background:#1a1a3e}}
+.summary{{display:flex;flex-wrap:wrap;margin:20px 0}}
+</style></head><body>
+<h1>gm-quant V30.4 回测报告</h1>
+<p>{datetime.now():%Y-%m-%d %H:%M} | 区间: {d.trades[0].date if d.trades else 'N/A'} ~ {d.trades[-1].date if d.trades else 'N/A'}</p>
+
+<div class="summary">
+<div class="card"><div class="lbl">总收益率</div><div class="val {'pos' if d.total_return>=0 else 'neg'}">{d.total_return:+.2f}%</div></div>
+<div class="card"><div class="lbl">最大回撤</div><div class="val neg">{d.max_drawdown:.2f}%</div></div>
+<div class="card"><div class="lbl">胜率</div><div class="val {'pos' if d.win_rate>=50 else ''}">{d.win_rate:.1f}%</div></div>
+<div class="card"><div class="lbl">夏普比率</div><div class="val">{d.sharpe_ratio:.2f}</div></div>
+<div class="card"><div class="lbl">交易次数</div><div class="val">{len(d.trades)}</div></div>
+<div class="card"><div class="lbl">平均盈亏</div><div class="val {'pos' if d.avg_profit>=0 else 'neg'}">{d.avg_profit:+.2f}%</div></div>
+</div>
+
+<h2>策略分项</h2>
+<table><tr><th>策略</th><th>交易</th><th>胜率</th><th>累计盈亏</th></tr>'''
+        for name, stats in sorted(d.strategy_stats.items()):
+            total = stats.get('total', 0)
+            wins_s = stats.get('wins', 0)
+            wr = wins_s/total*100 if total else 0
+            pnl = stats.get('pnl', 0)
+            html += f'<tr><td>{name}</td><td>{total}</td><td>{wr:.1f}%</td><td class="{"pos" if pnl>=0 else "neg"}">{pnl:+.1f}%</td></tr>'
+        html += '</table>'
+
+        html += '<h2>行业分项</h2><table><tr><th>行业</th><th>交易</th><th>胜率</th><th>累计</th></tr>'
+        for sec, stats in sorted(d.sector_stats.items()):
+            total = stats.get('total', 0)
+            wins_s = stats.get('wins', 0)
+            wr = wins_s/total*100 if total else 0
+            pnl = stats.get('pnl', 0)
+            html += f'<tr><td>{sec}</td><td>{total}</td><td>{wr:.1f}%</td><td class="{"pos" if pnl>=0 else "neg"}">{pnl:+.1f}%</td></tr>'
+        html += '</table>'
+
+        # 最近10笔
+        html += '<h2>最近卖出</h2><table><tr><th>日期</th><th>股票</th><th>策略</th><th>盈亏</th></tr>'
+        recent = [t for t in sells if hasattr(t, 'pnl_pct')][-10:]
+        for t in reversed(recent):
+            html += f'<tr><td>{t.date}</td><td>{getattr(t,"symbol","")}</td><td>{getattr(t,"strategy","")}</td><td class="{"pos" if t.pnl_pct>=0 else "neg"}">{t.pnl_pct:+.2f}%</td></tr>'
+        html += '</table><p style="color:#888;text-align:center;margin-top:40px">gm-quant V30.4 · Powered by local_data_loader</p></body></html>'
+
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write(html)
+        messagebox.showinfo('导出成功', f'HTML报告已保存到:\n{filename}')
 
     def _on_close(self):
         """关闭窗口"""
