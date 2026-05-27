@@ -113,7 +113,6 @@ ATR_STOP_MULT   = 1.5   # 姝㈡崯鍊嶆暟
 ATR_TRAIL_MULT  = 2.5   # 璺熻釜姝㈢泩鍊嶆暟 (V17: 2.0鈫?.5锛岃鐩堝埄鍏呭垎濂旇窇)
 
 STOP_LOSS_CAP   = 0.08  # 固定止损上限 8%
-TARGET_DAILY_VOL = 0.03  # V30.4: 目标日波动率(借鉴Vibe-Trading EqualVol)
 
 
 
@@ -265,9 +264,9 @@ LOW_VOL_SECTORS  = {"金融", "公用事业", "消费"}
 
 # =============================================================================
 
-BACKTEST_START = '2024-01-01 09:30:00'
+BACKTEST_START = '2025-01-01 09:30:00'
 
-BACKTEST_END   = '2025-05-30 15:00:00'
+BACKTEST_END   = '2026-05-26 15:00:00'
 
 BACKTEST_CASH  = 25000
 
