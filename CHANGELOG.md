@@ -1,5 +1,28 @@
 # Changelog
 
+## V30.5 (2026-05-27)
+
+### 架构
+- 借鉴 7 个顶级量化仓库 (vnpy/abu/Qbot/QUANTAXIS/Vibe-Trading/ai_quant_trade/panda_factor)
+- 代码精简: 39→26 个 py 文件
+- 合并: trade_utils(三合一), risk_manager(风控合一), indicators(指标四合一)
+- 删除: ai_assistant, live_monitor, setup, gm_logger, position_sizer, strategy_template
+
+### 新增
+- UMP 裁判系统: 6边裁+主裁 (借鉴 abu)
+- 分层风控引擎: 订单/持仓/账户三级 (借鉴 vnpy)
+- 真实交易费用: 佣金+印花税+过户费 (借鉴 ai_quant_trade)
+- 涨跌停+滑点模型 (借鉴 abu)
+- Hurst指数+ADX趋势强度 (借鉴 QUANTAXIS)
+- RSRS阻力支撑指标 (借鉴 Qbot)
+- 因子标准化/中性化/IC分析 (借鉴 panda_factor)
+- K线形态增强: doji/hammer/engulfing (借鉴 Vibe-Trading)
+- 策略相关性热力图 + HTML报告导出
+
+### 独立回测
+- 零 GM SDK 依赖，本地 SQLite 数据
+- 2025-2026: **+9.30%**, 胜率 50.5%, 盈利因子 1.87
+
 ## V30.3 (2026-05-26)
 
 ### 修复
