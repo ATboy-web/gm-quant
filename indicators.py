@@ -147,6 +147,22 @@ def calc_sma(closes, period=20):
     return float(np.mean(closes[-period:]))
 
 
+def calc_ma_crossover(closes, fast=20, slow=60):
+    """V30.4: MA金叉/死叉检测 (借鉴runoob教程)"""
+    n = len(closes)
+    if n < slow + 2:
+        return {'golden_cross': False, 'dead_cross': False, 'bullish': False, 'spread': 0}
+    import numpy as np
+    fast_ma = float(np.mean(closes[-fast:]))
+    slow_ma = float(np.mean(closes[-slow:]))
+    prev_fast = float(np.mean(closes[-(fast+1):-1]))
+    prev_slow = float(np.mean(closes[-(slow+1):-1]))
+    golden_cross = (prev_fast <= prev_slow) and (fast_ma > slow_ma)
+    dead_cross = (prev_fast >= prev_slow) and (fast_ma < slow_ma)
+    spread = (fast_ma - slow_ma) / slow_ma * 100 if slow_ma > 0 else 0
+    return {'golden_cross': golden_cross, 'dead_cross': dead_cross,
+            'bullish': fast_ma > slow_ma, 'spread': round(spread, 2)}
+
 # =============================================================================
 # 成交量分析
 # =============================================================================
@@ -454,3 +470,592 @@ def detect_peaks_valleys(closes, window=5):
             valleys.append(i)
 
     return {'peaks': peaks, 'valleys': valleys}
+
+
+# ====== V30.5 高级指标 ======
+
+def calc_rsrs(high, low, N=18, M=400):
+    """
+    计算 RSRS 指标。
+
+    Args:
+        high: 最高价序列 (list or np.ndarray)
+        low: 最低价序列
+        N: 回归窗口 (默认18日)
+        M: 历史斜率参考窗口 (默认400日)
+
+    Returns:
+        {
+            'slope': float (当前斜率),
+            'zscore': float (标准化得分),
+            'r2': float (拟合优度),
+            'signal': 'bullish' | 'bearish' | 'neutral'
+        }
+    """
+    n = len(high)
+    if n < N + 1:
+        return {'slope': 0, 'zscore': 0, 'r2': 0, 'signal': 'neutral'}
+
+    high_arr = np.array(high[-N:])
+    low_arr = np.array(low[-N:])
+
+    # OLS: high = slope * low + intercept
+    try:
+        slope, intercept = np.polyfit(low_arr, high_arr, 1)
+        # R^2
+        predicted = slope * low_arr + intercept
+        ss_res = np.sum((high_arr - predicted) ** 2)
+        ss_tot = np.sum((high_arr - np.mean(high_arr)) ** 2)
+        r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0
+    except Exception:
+        return {'slope': 0, 'zscore': 0, 'r2': 0, 'signal': 'neutral'}
+
+    # 计算历史斜率序列 (滑动窗口)
+    if n >= M + N:
+        historical_slopes = []
+        for i in range(min(M, n - N)):
+            h = high[i:i + N]
+            l = low[i:i + N]
+            try:
+                s, _ = np.polyfit(l, h, 1)
+                historical_slopes.append(s)
+            except Exception:
+                pass
+
+        if len(historical_slopes) >= 60:
+            mean_slope = np.mean(historical_slopes)
+            std_slope = np.std(historical_slopes)
+            if std_slope > 0.001:
+                zscore = (slope - mean_slope) / std_slope
+            else:
+                zscore = 0
+        else:
+            zscore = 0
+    else:
+        zscore = 0
+
+    # 信号判断
+    if zscore > 0.7 and r2 > 0.6:
+        signal = 'bullish'
+    elif zscore < -0.7 and r2 > 0.6:
+        signal = 'bearish'
+    else:
+        signal = 'neutral'
+
+    return {
+        'slope': round(float(slope), 4),
+        'zscore': round(float(zscore), 2),
+        'r2': round(float(r2), 3),
+        'signal': signal
+    }
+
+
+def calc_rsrs_score(closes, highs, lows, N=18):
+    """
+    简化版 RSRS 评分 — 用于选股打分。
+    基于斜率标准化+动量修正。
+
+    返回 0~1 之间的分数，越高越看涨。
+    """
+    n = len(closes)
+    if n < N + 10:
+        return 0.5
+
+    rsrs = calc_rsrs(highs, lows, N, min(200, n))
+
+    # 基础分: Z-score 映射到 [0,1]
+    z = np.clip(rsrs['zscore'], -2, 2)
+    base_score = (z + 2) / 4  # [-2,2] → [0,1]
+
+    # R² 加权: 低R² = 噪声大 = 降权
+    r2_weight = min(1.0, max(0.3, rsrs['r2']))
+
+    # 价格动量修正
+    ret_5d = (closes[-1] - closes[-6]) / closes[-6] if closes[-6] > 0 else 0
+    momentum_bonus = np.clip(ret_5d * 2, -0.15, 0.15)
+
+    score = base_score * r2_weight + momentum_bonus
+    return round(max(0.0, min(1.0, score)), 3)
+
+
+# ====== V30.5 高级指标 (merged) ======
+def calc_hurst(series, max_lag=20):
+    """
+    计算 Hurst 指数 — 判断市场价格行为特征。
+
+    H < 0.5: 均值回归 (利于 MR 策略)
+    H ≈ 0.5: 随机游走
+    H > 0.5: 趋势持续 (利于 MOM 策略)
+
+    使用 R/S 分析方法 (Rescaled Range Analysis)
+
+    Args:
+        series: 价格序列 (list or np.ndarray)
+        max_lag: 最大滞后阶数
+
+    Returns:
+        float: Hurst指数 (0~1)
+    """
+    if len(series) < 30:
+        return 0.5  # 样本不足，默认随机游走
+
+    log_returns = np.diff(np.log(series))
+    if len(log_returns) < 20:
+        return 0.5
+
+    lags = range(2, min(max_lag, len(log_returns) // 2))
+    tau = []
+    for lag in lags:
+        # 分割为多个子序列
+        n_splits = len(log_returns) // lag
+        if n_splits < 2:
+            break
+        rs_values = []
+        for i in range(n_splits):
+            chunk = log_returns[i * lag:(i + 1) * lag]
+            mean_chunk = np.mean(chunk)
+            dev = chunk - mean_chunk
+            Z = np.cumsum(dev)
+            R = np.max(Z) - np.min(Z)
+            S = np.std(chunk)
+            if S > 0:
+                rs_values.append(R / S)
+
+        if rs_values:
+            tau.append([lag, np.mean(rs_values)])
+
+    if len(tau) < 4:
+        return 0.5
+
+    # 线性回归 log(RS) = H * log(lag)
+    log_lag = np.log([t[0] for t in tau])
+    log_rs = np.log([t[1] for t in tau])
+
+    # 简单线性回归
+    n = len(log_lag)
+    x_mean = np.mean(log_lag)
+    y_mean = np.mean(log_rs)
+    num = sum((log_lag[i] - x_mean) * (log_rs[i] - y_mean) for i in range(n))
+    den = sum((log_lag[i] - x_mean) ** 2 for i in range(n))
+
+    if den == 0:
+        return 0.5
+    H = num / den
+    return max(0.01, min(0.99, H))
+
+
+# ============================================================
+# ADX 趋势强度 (借鉴 QUANTAXIS)
+# ============================================================
+
+def calc_adx(high, low, close, period=14):
+    """
+    计算 ADX (Average Directional Index) — 趋势强度指标。
+
+    ADX < 20: 无趋势 (震荡市)
+    ADX 20-30: 趋势形成中
+    ADX > 30: 强趋势市场
+    ADX > 50: 极强趋势 (极端)
+
+    Returns:
+        {
+            'adx': float (当前ADX值),
+            'plus_di': float (正向指标),
+            'minus_di': float (负向指标),
+            'is_trending': bool (是否有趋势),
+            'direction': 'up' | 'down' | 'none'
+        }
+    """
+    n = len(close)
+    if n < period + 1:
+        return {'adx': 20, 'plus_di': 0, 'minus_di': 0, 'is_trending': False, 'direction': 'none'}
+
+    # True Range
+    tr = []
+    for i in range(1, n):
+        hl = high[i] - low[i]
+        hc = abs(high[i] - close[i - 1])
+        lc = abs(low[i] - close[i - 1])
+        tr.append(max(hl, hc, lc))
+
+    # Directional Movement
+    plus_dm = []
+    minus_dm = []
+    for i in range(1, n):
+        up = high[i] - high[i - 1]
+        down = low[i - 1] - low[i]
+        if up > down and up > 0:
+            plus_dm.append(up)
+        else:
+            plus_dm.append(0)
+        if down > up and down > 0:
+            minus_dm.append(down)
+        else:
+            minus_dm.append(0)
+
+    # 平滑 (Wilder's smoothing)
+    atr_val = np.mean(tr[-period:])
+    plus_di = 100 * np.mean(plus_dm[-period:]) / max(atr_val, 0.001)
+    minus_di = 100 * np.mean(minus_dm[-period:]) / max(atr_val, 0.001)
+
+    # ADX = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
+    di_sum = plus_di + minus_di
+    dx = 100 * abs(plus_di - minus_di) / max(di_sum, 0.001)
+
+    # 简单均值作为ADX
+    adx = dx if n < period * 2 else np.mean([dx] + [0] * (period - 1))
+
+    # 也可以使用简单平滑
+    adx_smooth = float(dx)  # 简化为DX
+
+    is_trending = adx_smooth > 20
+    if plus_di > minus_di:
+        direction = 'up'
+    elif minus_di > plus_di:
+        direction = 'down'
+    else:
+        direction = 'none'
+
+    return {
+        'adx': round(float(adx_smooth), 1),
+        'plus_di': round(float(plus_di), 1),
+        'minus_di': round(float(minus_di), 1),
+        'is_trending': is_trending,
+        'direction': direction
+    }
+
+
+# ============================================================
+# CHO 佳庆指标 (借鉴 QUANTAXIS)
+# ============================================================
+
+def calc_cho(high, low, close, volume, short_period=3, long_period=10):
+    """
+    CHO (Chaikin Oscillator) — 量价确认指标。
+
+    正 CHO: 资金流入 (积累)
+    负 CHO: 资金流出 (分配)
+
+    Returns:
+        float: CHO值
+    """
+    n = len(close)
+    if n < long_period + 1:
+        return 0.0
+
+    # A/D Line = sum((close-low)-(high-close))/(high-low) * volume
+    ad = []
+    for i in range(n):
+        hl = high[i] - low[i]
+        if hl > 0:
+            clv = ((close[i] - low[i]) - (high[i] - close[i])) / hl
+        else:
+            clv = 0
+        ad.append(clv * volume[i])
+
+    # CHO = EMA(AD, short) - EMA(AD, long)
+    ad_series = np.array(ad)
+    ema_short = _ema(ad_series, short_period)
+    ema_long = _ema(ad_series, long_period)
+
+    if ema_short is None or ema_long is None:
+        return 0.0
+    return round(float(ema_short - ema_long), 2)
+
+
+def _ema(data, period):
+    """指数移动平均"""
+    if len(data) < period:
+        return None
+    alpha = 2.0 / (period + 1)
+    result = data[0]
+    for x in data[1:]:
+        result = alpha * x + (1 - alpha) * result
+    return result
+
+def calc_rsrs(high, low, N=18, M=400):
+    """
+    计算 RSRS 指标。
+
+    Args:
+        high: 最高价序列 (list or np.ndarray)
+        low: 最低价序列
+        N: 回归窗口 (默认18日)
+        M: 历史斜率参考窗口 (默认400日)
+
+    Returns:
+        {
+            'slope': float (当前斜率),
+            'zscore': float (标准化得分),
+            'r2': float (拟合优度),
+            'signal': 'bullish' | 'bearish' | 'neutral'
+        }
+    """
+    n = len(high)
+    if n < N + 1:
+        return {'slope': 0, 'zscore': 0, 'r2': 0, 'signal': 'neutral'}
+
+    high_arr = np.array(high[-N:])
+    low_arr = np.array(low[-N:])
+
+    # OLS: high = slope * low + intercept
+    try:
+        slope, intercept = np.polyfit(low_arr, high_arr, 1)
+        # R^2
+        predicted = slope * low_arr + intercept
+        ss_res = np.sum((high_arr - predicted) ** 2)
+        ss_tot = np.sum((high_arr - np.mean(high_arr)) ** 2)
+        r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0
+    except Exception:
+        return {'slope': 0, 'zscore': 0, 'r2': 0, 'signal': 'neutral'}
+
+    # 计算历史斜率序列 (滑动窗口)
+    if n >= M + N:
+        historical_slopes = []
+        for i in range(min(M, n - N)):
+            h = high[i:i + N]
+            l = low[i:i + N]
+            try:
+                s, _ = np.polyfit(l, h, 1)
+                historical_slopes.append(s)
+            except Exception:
+                pass
+
+        if len(historical_slopes) >= 60:
+            mean_slope = np.mean(historical_slopes)
+            std_slope = np.std(historical_slopes)
+            if std_slope > 0.001:
+                zscore = (slope - mean_slope) / std_slope
+            else:
+                zscore = 0
+        else:
+            zscore = 0
+    else:
+        zscore = 0
+
+    # 信号判断
+    if zscore > 0.7 and r2 > 0.6:
+        signal = 'bullish'
+    elif zscore < -0.7 and r2 > 0.6:
+        signal = 'bearish'
+    else:
+        signal = 'neutral'
+
+    return {
+        'slope': round(float(slope), 4),
+        'zscore': round(float(zscore), 2),
+        'r2': round(float(r2), 3),
+        'signal': signal
+    }
+
+
+def calc_rsrs_score(closes, highs, lows, N=18):
+    """
+    简化版 RSRS 评分 — 用于选股打分。
+    基于斜率标准化+动量修正。
+
+    返回 0~1 之间的分数，越高越看涨。
+    """
+    n = len(closes)
+    if n < N + 10:
+        return 0.5
+
+    rsrs = calc_rsrs(highs, lows, N, min(200, n))
+
+    # 基础分: Z-score 映射到 [0,1]
+    z = np.clip(rsrs['zscore'], -2, 2)
+    base_score = (z + 2) / 4  # [-2,2] → [0,1]
+
+    # R² 加权: 低R² = 噪声大 = 降权
+    r2_weight = min(1.0, max(0.3, rsrs['r2']))
+
+    # 价格动量修正
+    ret_5d = (closes[-1] - closes[-6]) / closes[-6] if closes[-6] > 0 else 0
+    momentum_bonus = np.clip(ret_5d * 2, -0.15, 0.15)
+
+    score = base_score * r2_weight + momentum_bonus
+    return round(max(0.0, min(1.0, score)), 3)
+
+
+# ====== V30.5 ======
+def winsorize_mad(series, n_mad=3.0):
+    """
+    MAD 去极值 — 中位数绝对偏差法。
+
+    Args:
+        series: 因子值序列
+        n_mad: MAD 倍数阈值
+
+    Returns:
+        去极值后的序列
+    """
+    median = np.median(series)
+    mad = np.median(np.abs(series - median))
+    if mad < 0.001:
+        return series
+
+    upper = median + n_mad * mad * 1.4826  # 1.4826 = 正态化系数
+    lower = median - n_mad * mad * 1.4826
+    return np.clip(series, lower, upper)
+
+
+def winsorize_percentile(series, lower_pct=1, upper_pct=99):
+    """
+    百分位去极值。
+
+    Args:
+        series: 因子值序列
+        lower_pct: 下百分位
+        upper_pct: 上百分位
+
+    Returns:
+        去极值后的序列
+    """
+    lo = np.percentile(series, lower_pct)
+    hi = np.percentile(series, upper_pct)
+    return np.clip(series, lo, hi)
+
+
+def standardize(series):
+    """
+    Z-score 标准化: (x - μ) / σ。
+
+    Returns:
+        标准化后的序列，均值为 0 标准差为 1
+    """
+    std = np.std(series)
+    if std < 0.001:
+        return np.zeros_like(series)
+    return (series - np.mean(series)) / std
+
+
+def standardize_cross_sectional(factor_matrix):
+    """
+    截面标准化 — 每个交易日独立标准化各股票的因子值。
+
+    Args:
+        factor_matrix: (n_dates, n_stocks) 的因子矩阵
+
+    Returns:
+        截面标准化后的矩阵
+    """
+    result = np.zeros_like(factor_matrix, dtype=float)
+    for i in range(factor_matrix.shape[0]):
+        row = factor_matrix[i]
+        mask = ~np.isnan(row)
+        if mask.sum() > 1:
+            result[i][mask] = standardize(row[mask])
+    return result
+
+
+def neutralize_by_sector(factor_values, sectors):
+    """
+    行业中性化 — 移除行业均值影响。
+
+    Args:
+        factor_values: 因子值数组 (n_stocks,)
+        sectors: 行业标签数组 (n_stocks,)
+
+    Returns:
+        行业中性化后的因子值
+    """
+    result = np.array(factor_values, dtype=float)
+    unique_sectors = set(sectors)
+    for sec in unique_sectors:
+        mask = np.array([s == sec for s in sectors])
+        if mask.sum() > 1:
+            sec_mean = np.mean(factor_values[mask])
+            result[mask] = result[mask] - sec_mean
+    return result
+
+
+def neutralize_by_market_cap(factor_values, market_caps):
+    """
+    市值中性化 — 回归移除市值影响。
+
+    Args:
+        factor_values: 因子值
+        market_caps: 市值 (对数)
+
+    Returns:
+        市值中性化后的残差
+    """
+    X = np.column_stack([np.ones(len(factor_values)), market_caps])
+    mask = ~(np.isnan(factor_values) | np.isnan(market_caps).any() if isinstance(market_caps, np.ndarray) else np.isnan(factor_values))
+    if mask.sum() < 3:
+        return factor_values
+
+    beta = np.linalg.lstsq(X[mask], factor_values[mask], rcond=None)[0]
+    predicted = X @ beta
+    return factor_values - predicted
+
+
+def calc_factor_ic(factor_values, forward_returns):
+    """
+    计算因子 IC (Information Coefficient)。
+
+    Args:
+        factor_values: 因子值 (n_stocks,)
+        forward_returns: 未来收益 (n_stocks,)
+
+    Returns:
+        {'ic': float, 'rank_ic': float}
+    """
+    mask = ~(np.isnan(factor_values) | np.isnan(forward_returns))
+    if mask.sum() < 5:
+        return {'ic': 0.0, 'rank_ic': 0.0}
+
+    f = factor_values[mask]
+    r = forward_returns[mask]
+
+    try:
+        ic, _ = stats.pearsonr(f, r)
+    except Exception:
+        ic = 0.0
+
+    try:
+        rank_ic, _ = stats.spearmanr(f, r)
+    except Exception:
+        rank_ic = 0.0
+
+    return {
+        'ic': round(float(ic) if not np.isnan(ic) else 0.0, 4),
+        'rank_ic': round(float(rank_ic) if not np.isnan(rank_ic) else 0.0, 4)
+    }
+
+
+def process_factor_pipeline(factor_values, sectors=None, market_caps=None,
+                             winsorize=True, standardize_out=True,
+                             neutralize_sector=True, neutralize_mcap=False):
+    """
+    完整的因子处理流水线 (借鉴 panda_factor factor_analysis_workflow)。
+
+    Args:
+        factor_values: 原始因子值
+        sectors: 行业标签 (可选)
+        market_caps: 市值 (可选)
+        winsorize: 是否去极值
+        standardize_out: 是否标准化输出
+        neutralize_sector: 是否行业中性化
+        neutralize_mcap: 是否市值中性化
+
+    Returns:
+        处理后的因子值
+    """
+    result = np.array(factor_values, dtype=float)
+
+    # 1. 去极值
+    if winsorize:
+        result = winsorize_mad(result, n_mad=3.0)
+
+    # 2. 中性化
+    if neutralize_sector and sectors is not None:
+        result = neutralize_by_sector(result, sectors)
+    if neutralize_mcap and market_caps is not None:
+        result = neutralize_by_market_cap(result, market_caps)
+
+    # 3. 标准化
+    if standardize_out:
+        result = standardize(result)
+
+    return result
