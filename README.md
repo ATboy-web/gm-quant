@@ -1,119 +1,102 @@
-# GM V30.5 — 六策略行业差异化量化交易系统
+# GM-Quant 量化交易系统
 
-基于 [掘金量化（GoldMiner）](https://www.myquant.cn/)平台的 A 股量化交易策略。借鉴 7 个顶级量化仓库，独立离线回测零 GM 依赖。
+A股多策略量化交易系统，基于掘金量化(GoldMiner)平台。
 
-> **当前版本**：V30.5 · UMP裁判系统 + 分层风控 + 真实费用  
-> **独立回测**：+9.30%（2025-01-01 ~ 2026-05-26，¥25,000 初始资金）
+## 最新回测结果 (V33.2)
 
----
+| 指标 | 数值 |
+|------|------|
+| **总收益** | **+18.75%** |
+| 初始资金 | ¥30,000 |
+| 最终净值 | ¥35,626 |
+| 最大回撤 | -19.14% |
+| 交易次数 | 110笔 |
+| 胜率 | 49.1% |
+| 盈利因子 | 1.98 |
 
-## 快速开始
+### 策略表现
 
-```bash
-# 独立离线回测 (零 GM SDK 依赖)
-python standalone_backtest.py
+| 策略 | 交易 | 胜率 | 累计收益 |
+|------|------|------|---------|
+| BK (突破) | 24笔 | 45.8% | +115.5% |
+| VRC (量价反转) | 34笔 | 44.1% | +80.1% |
+| MR (均值回归) | 51笔 | 52.9% | +29.3% |
 
-# 掘金终端回测/仿真
-# 在掘金终端 IDE 中打开 main.py
-```
+## 策略架构
 
----
+### 活跃策略
+- **MR (均值回归)** - 全行业，权重1.0
+- **VRC (成交量反转确认)** - 全行业，权重0.5-2.0
+- **BK (突破)** - 高波动行业，权重1.0-1.5
+- **DV (红利)** - 部分行业
+- **RT (反转)** - 部分行业
 
-## 回测结果
+### 禁用策略
+- **MOM (动量)** - 当前框架下无法出信号
 
-| 区间 | 收益 | 回撤 | 胜率 | 盈利因子 |
-|------|------|------|------|----------|
-| 2024-2025 | -4.53% | -13.4% | 34.8% | 0.73 |
-| **2025-2026** | **+9.30%** | **-19.2%** | **50.5%** | **1.87** |
+## 关键改动 (V33.2)
 
-### 2025-2026 策略分项
+1. **MR权重从3.0降到1.0** - 减少MR交易，提高整体质量
+2. **MOM禁用** - MOM在当前框架下无法出信号
+3. **BK ATR移动止盈** - 盈利>10%后，最高价回撤ATR*2.5出场
+4. **executor.py资金利用率修复** - 移除remaining_slots除法
+5. **VRC放宽入场条件** - DECLINE -0.06, VOL 1.2, SCORE 0.45, RSI 15-50
 
-| 策略 | 交易 | 胜率 | 累计 |
-|------|------|------|------|
-| MR 均值回归 | 62 | 43.5% | +19.1% |
-| VRC 成交量反转 | 14 | 71.4% | +71.7% |
-| BK 突破 | 15 | 66.7% | +61.5% |
-| RT 反转确认 | 4 | 25.0% | +0.7% |
-
----
-
-## 核心架构
-
-```
-本地SQLite数据 (C:/lainghua)
-        ↓
-standalone_backtest.py (独立回测引擎)
-  ├── local_data_loader.py   数据加载
-  ├── trade_utils.py          交易日历+费用+滑点+通知
-  ├── risk_manager.py         分层风控 (订单/持仓/账户)
-  ├── fusion.py (UMP)         6边裁+主裁决策
-  ├── executor.py             交易执行
-  ├── indicators.py           技术指标+Hurst+ADX+因子处理
-  ├── screener.py             六因子选股
-  ├── sector_config.py        12行业差异化配置
-  ├── stock_pool.py           股票池管理
-  └── strategy_factory.py     dict架构策略工厂
-       ├── strategy_mr.py       均值回归
-       ├── strategy_momentum.py 动量趋势
-       ├── strategy_vrc.py      成交量反转
-       ├── strategy_breakout.py 突破
-       ├── strategy_dividend.py 红利
-       └── strategy_reversal.py 反转确认
-```
-
----
-
-## 项目结构 (26 个 py 文件)
+## 文件结构
 
 ```
-config.py              全局参数
-indicators.py           技术指标 (Hurst/ADX/RSRS/K线/因子处理)
-stock_pool.py           股票池管理 + 名称映射
-sector_config.py        12行业差异化配置
-screener.py             六因子选股打分
-
-strategy_factory.py     策略工厂 (dict架构)
-strategy_mr.py          均值回归策略
-strategy_momentum.py    动量趋势策略
-strategy_vrc.py         成交量反转确认
-strategy_breakout.py    突破策略
-strategy_dividend.py    红利策略
-strategy_reversal.py    反转确认策略
-
-executor.py             交易执行引擎
-fusion.py               UMP裁判系统 (6边裁+主裁)
-trade_utils.py          交易日历 + 费用 + 滑点 + 通知
-risk_manager.py         分层风控 + 组合风险管理
-
-standalone_backtest.py  独立离线回测 (零GM依赖)
-local_data_loader.py    SQLite本地数据 + yfinance备用
-offline_backtest.py     GM终端回测 (历史保留)
-
-visualizer.py           tkinter+matplotlib可视化
-main.py                 掘金终端主程序
-trace.py                日志+诊断追踪
-push_to_github.py       GitHub REST API推送
-sentiment_engine.py     舆情爬虫+情绪分析
-stats_validator.py      统计验证 (Monte Carlo)
-vibe_integration.py     Vibe高级指标
+gm-quant/
+├── config.py              # 配置参数
+├── executor.py            # 交易执行器
+├── strategy_mr.py         # MR均值回归策略
+├── strategy_vrc.py        # VRC量价反转策略
+├── strategy_breakout.py   # BK突破策略
+├── strategy_momentum.py   # MOM动量策略
+├── strategy_dividend.py   # DV红利策略
+├── strategy_reversal.py   # RT反转策略
+├── sector_config.py       # 行业差异化配置
+├── indicators.py          # 技术指标
+├── stock_pool.py          # 股票池管理
+├── trade_utils.py         # 交易工具
+├── fusion.py              # 多策略融合
+├── standalone_backtest.py # 离线回测引擎
+├── minute_backtest.py     # 分钟数据回测引擎
+├── download_minute_data.py# 分钟数据下载器
+├── local_data_loader.py   # 本地数据加载器
+├── offline_backtest.py    # 离线回测
+├── visualizer.py          # 可视化
+└── faction_config.py      # 派系配置
 ```
 
----
+## 回测环境
 
-## 借鉴来源
+- 数据目录: `C:/lainghua/basic_data/day_bar/`
+- Python环境: Python 3.13
+- 回测命令: `python standalone_backtest.py`
+- 超时设置: 300000ms (5分钟)
+- **DATA_COUNT=60** — 不可修改，BK在120下严重亏损
 
-| 仓库 | ⭐ | 借鉴 |
-|------|-----|------|
-| [vnpy](https://github.com/vnpy/vnpy) | 40.9k | 分层风控引擎, 策略模板 |
-| [abu](https://github.com/bbfamily/abu) | 17.3k | UMP裁判系统, 仓位管理, 滑点 |
-| [Qbot](https://github.com/UFund-Me/Qbot) | 17.5k | RSRS指标, 多渠通知 |
-| [QUANTAXIS](https://github.com/yutiansut/QUANTAXIS) | 10.6k | Hurst/ADX/CHO 高级指标 |
-| [Vibe-Trading](https://github.com/HKUDS/Vibe-Trading) | 8.7k | 本地数据加载, K线形态 |
-| [ai_quant_trade](https://github.com/charliedream1/ai_quant_trade) | 5.7k | 交易日历, 真实费用 |
-| [panda_factor](https://github.com/PandaAI-Tech/panda_factor) | 2.7k | 因子标准化/中性化/IC分析 |
+## 参数禁忌
 
----
+- 不要提高BK权重(3.0-4.0会降低收益)
+- 不要禁用MR(提供出场过滤)
+- 不要禁用VRC
+- 不要修改DATA_COUNT
+
+## 收益瓶颈
+
+框架上限约+19%，受限于：
+1. 股票池：96只蓝筹股，波动率有限
+2. 数据：17个月日线，牛市行情不足
+3. 资金：¥30,000，仓位受限
+4. 无杠杆：纯多头，无法放大收益
 
 ## License
 
-Private — 个人量化研究用途。
+MIT
+
+---
+
+*回测区间: 2025-01-01 ~ 2026-05-26*
+*股票池: 128只蓝筹股*
+*资金: ¥30,000*
