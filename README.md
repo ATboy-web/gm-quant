@@ -1,8 +1,10 @@
 # GM-Quant 量化交易系统
 
+> ⚠️ **项目暂停维护** - 作者暂时放弃了这个项目。
+
 A股多策略量化交易系统，基于掘金量化(GoldMiner)平台。
 
-## 最新回测结果 (V33.2)
+## 最终回测结果 (V33.2)
 
 | 指标 | 数值 |
 |------|------|
@@ -51,9 +53,6 @@ gm-quant/
 ├── strategy_mr.py         # MR均值回归策略
 ├── strategy_vrc.py        # VRC量价反转策略
 ├── strategy_breakout.py   # BK突破策略
-├── strategy_momentum.py   # MOM动量策略
-├── strategy_dividend.py   # DV红利策略
-├── strategy_reversal.py   # RT反转策略
 ├── sector_config.py       # 行业差异化配置
 ├── indicators.py          # 技术指标
 ├── stock_pool.py          # 股票池管理
@@ -61,11 +60,7 @@ gm-quant/
 ├── fusion.py              # 多策略融合
 ├── standalone_backtest.py # 离线回测引擎
 ├── minute_backtest.py     # 分钟数据回测引擎
-├── download_minute_data.py# 分钟数据下载器
-├── local_data_loader.py   # 本地数据加载器
-├── offline_backtest.py    # 离线回测
-├── visualizer.py          # 可视化
-└── faction_config.py      # 派系配置
+└── visualizer.py          # 可视化
 ```
 
 ## 回测环境
@@ -73,15 +68,7 @@ gm-quant/
 - 数据目录: `C:/lainghua/basic_data/day_bar/`
 - Python环境: Python 3.13
 - 回测命令: `python standalone_backtest.py`
-- 超时设置: 300000ms (5分钟)
-- **DATA_COUNT=60** — 不可修改，BK在120下严重亏损
-
-## 参数禁忌
-
-- 不要提高BK权重(3.0-4.0会降低收益)
-- 不要禁用MR(提供出场过滤)
-- 不要禁用VRC
-- 不要修改DATA_COUNT
+- **DATA_COUNT=60** — 不可修改
 
 ## 收益瓶颈
 
@@ -97,6 +84,9 @@ MIT
 
 ---
 
-*回测区间: 2025-01-01 ~ 2026-05-26*
-*股票池: 128只蓝筹股*
-*资金: ¥30,000*
+**项目状态: 暂停维护**
+
+如果你想继续开发，欢迎fork。代码结构清晰，策略逻辑完整，回测引擎可用。
+
+*最后更新: 2026-05-30*
+*最终版本: V33.2 (+18.75%)*
