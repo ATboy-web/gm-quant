@@ -35,7 +35,7 @@ ENABLE_FEES   = True  # V30.5: 启用交易费用
 print('=' * 60)
 print('  V30.5 独立离线回测 (本地SQLite数据)')
 print('  策略: MR+MOM+VRC+BK+DV+RT (6策略)')
-print('  股票池: %d只 / %d行业 | 资金: ¥%d' % (len(SYMBOLS), len(stock_pool.get_sector_list()), INIT_CASH))
+print('  股票池: %d只 / %d行业 | 资金: %d' % (len(SYMBOLS), len(stock_pool.get_sector_list()), INIT_CASH))
 print('  区间: %s ~ %s' % (START, END))
 print('=' * 60)
 sector_config.print_summary()
@@ -72,7 +72,7 @@ class StandaloneBacktest:
             if first_sym and 'date' in data[first_sym]:
                 self.bar_dates = sorted(data[first_sym]['date'].unique().tolist())
 
-        print('[引擎] 交易日: %d | 初始资金: ¥%d' % (len(self.bar_dates), start_cash))
+        print('[引擎] 交易日: %d | 初始资金: %d' % (len(self.bar_dates), start_cash))
 
     def _get_df_slice(self, symbol, bar_idx):
         df = self.data.get(symbol)
@@ -151,7 +151,7 @@ class StandaloneBacktest:
             if (i + 1) % 50 == 0:
                 tv = self.daily_values[-1]['total'] if self.daily_values else INIT_CASH
                 r = (tv - INIT_CASH) / INIT_CASH * 100
-                print('  [%s] %d/%d | ¥%.0f (%+.1f%%) | 持仓%d' %
+                print('  [%s] %d/%d | %.0f (%+.1f%%) | 持仓%d' %
                       (date_str, i+1, len(self.bar_dates), tv, r, len(self.positions)))
 
         self._print_summary()
@@ -351,8 +351,8 @@ class StandaloneBacktest:
         print('\n' + '=' * 60)
         print('  独立离线回测结果摘要')
         print('=' * 60)
-        print('  初始资金:   ¥%d' % INIT_CASH)
-        print('  最终净值:   ¥%.0f' % final)
+        print('  初始资金:   %d' % INIT_CASH)
+        print('  最终净值:   %.0f' % final)
         print('  总收益率:   %+.2f%%' % total_ret)
         print('  最大回撤:   %.2f%%' % max_dd)
         print('  交易次数:   %d (卖出%d)' % (len(self.trades), len(sells)))
@@ -360,7 +360,7 @@ class StandaloneBacktest:
         print('  平均盈亏:   %+.2f%%' % avg_pnl)
         print('  盈利因子:   %.2f' % pf)
         if self.fee_stats['total_fees'] > 0:
-            print('  交易费用:   ¥%.0f (买¥%.0f 卖¥%.0f)' %
+            print('  交易费用:   %.0f (买%.0f 卖%.0f)' %
                   (self.fee_stats['total_fees'], self.fee_stats['buy_fees'], self.fee_stats['sell_fees']))
         print('  ---- 策略分项 ----')
         for name in ['MR', 'MOM', 'VRC', 'BK', 'DV', 'RT']:

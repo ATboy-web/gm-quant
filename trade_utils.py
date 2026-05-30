@@ -181,17 +181,18 @@ def check_limit_status(prev_close: float, high: float, low: float, close: float)
 
     # 涨停：集合竞价封板 vs 盘中封板
     if limit_up:
-        open_pct = (high - prev_close) / prev_close
         is_pre_limit = (high == low)  # 开盘即涨停
-        buy_chance = LIMIT_UP_BUY_CHANCE * 0.3 if is_pre_limit else LIMIT_UP_BUY_CHANCE
-        can_buy = np.random.binomial(1, buy_chance) == 1
+        # V30.6: 移除随机数，改为确定性逻辑
+        # 涨停时无法买入（除非是开盘即涨停且价格未触及涨停价）
+        can_buy = False
     else:
         can_buy = True
 
     # 跌停
     if limit_down:
-        sell_chance = LIMIT_DOWN_SELL_CHANCE
-        can_sell = np.random.binomial(1, sell_chance) == 1
+        # V30.6: 移除随机数，改为确定性逻辑
+        # 跌停时无法卖出
+        can_sell = False
     else:
         can_sell = True
 

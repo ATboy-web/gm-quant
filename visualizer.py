@@ -1026,8 +1026,19 @@ tr:hover{{background:#1a1a3e}}
         self.root.destroy()
 
     def run(self):
-        """启动 GUI 主循环"""
+        """启动 GUI 主循环 (15秒后自动关闭)"""
+        # 15秒后自动关闭
+        self.root.after(15000, self._auto_close)
         self.root.mainloop()
+
+    def _auto_close(self):
+        """自动关闭窗口"""
+        try:
+            print('[Vis] 15秒超时，自动关闭窗口')
+            self.root.quit()
+            self.root.destroy()
+        except Exception:
+            pass
 
 
 # =============================================================================

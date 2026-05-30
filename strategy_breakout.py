@@ -183,13 +183,32 @@ def check_exit(df, pos_info, regime='range', context=None, today_str=None):
             'reason': 'BK_止损(%+.1f%%)' % (pnl * 100),
         }
 
-    # ---- 3. 固定止盈 ----
+    # ---- 3. 固定止盈 (V33.2: 改为ATR移动止盈) ----
     if pnl >= BK_TAKE_PROFIT:
-        return {
-            'action': 'SELL',
-            'confidence': 0.85,
-            'reason': 'BK_止盈(%+.1f%%)' % (pnl * 100),
-        }
+        # 使用ATR移动止盈替代固定止盈
+        peak = pos_info.get('peak', cur_price)
+        if cur_price > peak:
+            pos_info['peak'] = cur_price
+            peak = cur_price
+        
+        # ATR移动止盈：盈利超过10%后，最高价回撤3%出场
+        if pnl > 0.10:
+            atr = indicators.calc_atr(df['high'].values, df['low'].values, closes, 14)
+            if atr is not None:
+                trail_stop = peak - (atr * 2.5)
+                if cur_price < trail_stop:
+                    return {
+                        'action': 'SELL',
+                        'confidence': 0.85,
+                        'reason': 'BK_ATR移动止盈(peak=%.2f)' % peak,
+                    }
+        else:
+            # 盈利不到10%，使用固定止盈
+            return {
+                'action': 'SELL',
+                'confidence': 0.85,
+                'reason': 'BK_止盈(%+.1f%%)' % (pnl * 100),
+            }
 
     # ---- 4. 量能衰竭（高位缩量） ----
     vol_ratio = indicators.calc_volume_ratio(vols, config.VOL_PERIOD)

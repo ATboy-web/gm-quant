@@ -178,7 +178,7 @@ SECTOR_CONFIGS = {
 
 
 
-            'MR':  {'enabled': True,  'weight': 3.0},
+            'MR':  {'enabled': True,  'weight': 1.0},
 
 
 
@@ -190,7 +190,7 @@ SECTOR_CONFIGS = {
 
 
 
-            'MOM': {'enabled': True,  'weight': 0.5},
+            'MOM': {'enabled': False,  'weight': 0.5},
 
 
 
@@ -290,7 +290,7 @@ SECTOR_CONFIGS = {
 
 
 
-            'MR':  {'enabled': True,  'weight': 3.0},
+            'MR':  {'enabled': True,  'weight': 1.0},
 
 
 
@@ -302,7 +302,7 @@ SECTOR_CONFIGS = {
 
 
 
-            'MOM': {'enabled': True,  'weight': 0.5},
+            'MOM': {'enabled': False,  'weight': 0.5},
 
 
 
@@ -402,7 +402,7 @@ SECTOR_CONFIGS = {
 
 
 
-            'MR':  {'enabled': True,  'weight': 2.5},
+            'MR':  {'enabled': True,  'weight': 1.0},
 
 
 
@@ -410,7 +410,7 @@ SECTOR_CONFIGS = {
 
 
 
-            'MOM': {'enabled': True,  'weight': 0.5},
+            'MOM': {'enabled': False,  'weight': 0.5},
 
 
 
@@ -510,11 +510,11 @@ SECTOR_CONFIGS = {
 
 
 
-            'MR':  {'enabled': True,  'weight': 2.0},
+            'MR':  {'enabled': True,  'weight': 1.0},
 
 
 
-            'MOM': {'enabled': True,  'weight': 2.0},
+            'MOM': {'enabled': False,  'weight': 2.0},
 
 
 
@@ -622,7 +622,7 @@ SECTOR_CONFIGS = {
 
 
 
-            'MR':  {'enabled': True,  'weight': 2.0},
+            'MR':  {'enabled': True,  'weight': 1.0},
 
 
 
@@ -634,7 +634,7 @@ SECTOR_CONFIGS = {
 
 
 
-            'MOM': {'enabled': True,  'weight': 0.8},
+            'MOM': {'enabled': False,  'weight': 0.8},
 
 
 
@@ -738,11 +738,11 @@ SECTOR_CONFIGS = {
 
 
 
-            'MR':  {'enabled': True,  'weight': 2.0},    # V21: 2.5→2.0
+            'MR':  {'enabled': True,  'weight': 1.0},    # V21: 2.5→2.0
 
 
 
-            'MOM': {'enabled': True,  'weight': 1.5},
+            'MOM': {'enabled': False,  'weight': 1.5},
 
 
 
@@ -850,7 +850,7 @@ SECTOR_CONFIGS = {
 
 
 
-            'MR':  {'enabled': True,  'weight': 2.0},
+            'MR':  {'enabled': True,  'weight': 1.0},
 
 
 
@@ -858,7 +858,7 @@ SECTOR_CONFIGS = {
 
 
 
-            'MOM': {'enabled': True,  'weight': 1.5},
+            'MOM': {'enabled': False,  'weight': 1.5},
 
 
 
@@ -962,11 +962,11 @@ SECTOR_CONFIGS = {
 
 
 
-            'MR':  {'enabled': True,  'weight': 2.5},
+            'MR':  {'enabled': True,  'weight': 1.0},
 
 
 
-            'MOM': {'enabled': True,  'weight': 1.5},
+            'MOM': {'enabled': False,  'weight': 1.5},
 
 
 
@@ -1070,7 +1070,7 @@ SECTOR_CONFIGS = {
 
 
 
-            'MR':  {'enabled': True,  'weight': 2.5},
+            'MR':  {'enabled': True,  'weight': 1.0},
 
 
 
@@ -1078,7 +1078,7 @@ SECTOR_CONFIGS = {
 
 
 
-            'MOM': {'enabled': True,  'weight': 0.8},
+            'MOM': {'enabled': False,  'weight': 0.8},
 
 
 
@@ -1294,7 +1294,7 @@ SECTOR_CONFIGS = {
 
 
 
-            'MR':  {'enabled': True,  'weight': 2.0},
+            'MR':  {'enabled': True,  'weight': 1.0},
 
 
 
@@ -1306,7 +1306,7 @@ SECTOR_CONFIGS = {
 
 
 
-            'MOM': {'enabled': True,  'weight': 1.0},
+            'MOM': {'enabled': False,  'weight': 1.0},
 
 
 
@@ -1410,7 +1410,7 @@ SECTOR_CONFIGS = {
 
 
 
-            'MR':  {'enabled': True,  'weight': 2.0},    # V20: 3.0→2.0，降低抄底权重
+            'MR':  {'enabled': True,  'weight': 1.0},    # V20: 3.0→2.0，降低抄底权重
 
 
 
@@ -1426,7 +1426,7 @@ SECTOR_CONFIGS = {
 
 
 
-            'MOM': {'enabled': True,  'weight': 0.5},    # V20: 0.8→0.5
+            'MOM': {'enabled': False,  'weight': 0.5},    # V20: 0.8→0.5
 
 
 
@@ -1522,11 +1522,11 @@ DEFAULT_CONFIG = {
 
 
 
-        'MR':  {'enabled': True,  'weight': 2.5},
+        'MR':  {'enabled': True,  'weight': 1.0},
 
 
 
-        'MOM': {'enabled': True,  'weight': 1.0},
+        'MOM': {'enabled': False,  'weight': 1.0},
 
 
 

@@ -1059,3 +1059,255 @@ def process_factor_pipeline(factor_values, sectors=None, market_caps=None,
         result = standardize(result)
 
     return result
+
+
+# ============================================================
+# V30.6 高级指标 — 三大派系系统
+# ============================================================
+
+# ---- SuperTrend (超级趋势) ----
+def calc_supertrend(high, low, close, period=10, multiplier=3.0):
+    """
+    SuperTrend 指标 — 基于ATR的趋势跟踪止损线。
+
+    Args:
+        high, low, close: 价格序列 (numpy array)
+        period: ATR周期 (默认10)
+        multiplier: ATR乘数 (默认3.0)
+
+    Returns:
+        dict: {
+            'trend': bool (True=上升趋势, False=下降趋势),
+            'value': float (当前SuperTrend值),
+            'direction': int (1=上升, -1=下降)
+        }
+    """
+    n = len(close)
+    if n < period + 1:
+        return {'trend': True, 'value': float(close[-1]), 'direction': 1}
+
+    atr = calc_atr(high, low, close, period)
+    if atr is None or atr <= 0:
+        atr = float(close[-1]) * 0.02
+
+    hl2 = (high[-1] + low[-1]) / 2
+    upperband = hl2 + multiplier * atr
+    lowerband = hl2 - multiplier * atr
+
+    if close[-1] > upperband:
+        return {'trend': True, 'value': float(lowerband), 'direction': 1}
+    elif close[-1] < lowerband:
+        return {'trend': False, 'value': float(upperband), 'direction': -1}
+    else:
+        if n >= 2:
+            prev_hl2 = (high[-2] + low[-2]) / 2
+            prev_atr = calc_atr(high[:-1], low[:-1], close[:-1], period)
+            if prev_atr is None:
+                prev_atr = atr
+            prev_lower = prev_hl2 - multiplier * prev_atr
+            if close[-1] > prev_lower:
+                return {'trend': True, 'value': float(lowerband), 'direction': 1}
+        return {'trend': False, 'value': float(upperband), 'direction': -1}
+
+
+# ---- Ichimoku (一目均衡表) ----
+def calc_ichimoku(high, low, close, tenkan=9, kijun=26, senkou_b=52):
+    """
+    一目均衡表 — 综合趋势/动量/支撑阻力指标。
+
+    Returns:
+        dict: {
+            'tenkan': float (转换线),
+            'kijun': float (基准线),
+            'senkou_a': float (先行带A),
+            'senkou_b': float (先行带B),
+            'price_vs_cloud': 'above' | 'below' | 'inside',
+            'signal': 'bullish' | 'bearish' | 'neutral'
+        }
+    """
+    n = len(close)
+    if n < senkou_b:
+        return {'tenkan': 0, 'kijun': 0, 'senkou_a': 0, 'senkou_b': 0,
+                'price_vs_cloud': 'inside', 'signal': 'neutral'}
+
+    def midpoint(data, period):
+        recent = data[-period:]
+        return (float(np.max(recent)) + float(np.min(recent))) / 2
+
+    tenkan_val = (midpoint(high, tenkan) + midpoint(low, tenkan)) / 2 if n >= tenkan else float(close[-1])
+    kijun_val = (midpoint(high, kijun) + midpoint(low, kijun)) / 2 if n >= kijun else float(close[-1])
+    senkou_a = (tenkan_val + kijun_val) / 2
+    senkou_b_val = (midpoint(high, senkou_b) + midpoint(low, senkou_b)) / 2 if n >= senkou_b else senkou_a
+
+    cur_price = float(close[-1])
+    cloud_top = max(senkou_a, senkou_b_val)
+    cloud_bottom = min(senkou_a, senkou_b_val)
+
+    if cur_price > cloud_top:
+        price_vs_cloud = 'above'
+    elif cur_price < cloud_bottom:
+        price_vs_cloud = 'below'
+    else:
+        price_vs_cloud = 'inside'
+
+    bullish = 0
+    if tenkan_val > kijun_val:
+        bullish += 1
+    if cur_price > cloud_top:
+        bullish += 1
+    if senkou_a > senkou_b_val:
+        bullish += 1
+
+    signal = 'bullish' if bullish >= 2 else ('bearish' if bullish <= 0 else 'neutral')
+
+    return {
+        'tenkan': round(tenkan_val, 2), 'kijun': round(kijun_val, 2),
+        'senkou_a': round(senkou_a, 2), 'senkou_b': round(senkou_b_val, 2),
+        'price_vs_cloud': price_vs_cloud, 'signal': signal
+    }
+
+
+# ---- Keltner Channel (凯特纳通道) ----
+def calc_keltner(high, low, close, ema_period=20, atr_period=10, multiplier=2.0):
+    """
+    凯特纳通道 — 基于EMA+ATR的波动通道。
+
+    Returns:
+        dict: {
+            'upper', 'middle', 'lower': float,
+            'position': float (价格在通道中的位置 0~1),
+            'signal': 'breakout_up' | 'breakout_down' | 'squeeze' | 'normal'
+        }
+    """
+    n = len(close)
+    if n < max(ema_period, atr_period):
+        return {'upper': 0, 'middle': 0, 'lower': 0, 'position': 0.5, 'signal': 'normal'}
+
+    middle = float(_ema(np.array(close[-ema_period:]), ema_period))
+    if middle is None:
+        middle = float(np.mean(close[-ema_period:]))
+
+    atr = calc_atr(high, low, close, atr_period)
+    if atr is None:
+        atr = float(np.mean(np.abs(np.diff(close[-atr_period:]))))
+
+    upper = middle + multiplier * atr
+    lower = middle - multiplier * atr
+
+    cur_price = float(close[-1])
+    channel_width = upper - lower
+    position = (cur_price - lower) / channel_width if channel_width > 0 else 0.5
+
+    if cur_price > upper:
+        signal = 'breakout_up'
+    elif cur_price < lower:
+        signal = 'breakout_down'
+    elif channel_width / middle < 0.05:
+        signal = 'squeeze'
+    else:
+        signal = 'normal'
+
+    return {
+        'upper': round(upper, 2), 'middle': round(middle, 2),
+        'lower': round(lower, 2), 'position': round(position, 3), 'signal': signal
+    }
+
+
+# ---- MFI (资金流量指标) ----
+def calc_mfi(high, low, close, volume, period=14):
+    """
+    MFI (Money Flow Index) — 结合价格和成交量的RSI变体。
+    返回 0~100，>80超买，<20超卖。
+    """
+    n = len(close)
+    if n < period + 1:
+        return 50.0
+
+    typical = (high + low + close) / 3
+    money_flow = typical * volume
+
+    positive_flow = 0.0
+    negative_flow = 0.0
+    for i in range(-period, 0):
+        if typical[i] > typical[i - 1]:
+            positive_flow += money_flow[i]
+        elif typical[i] < typical[i - 1]:
+            negative_flow += money_flow[i]
+
+    if negative_flow == 0:
+        return 100.0
+    return round(float(100 - 100 / (1 + positive_flow / negative_flow)), 1)
+
+
+# ---- Williams %R (威廉指标) ----
+def calc_williams_r(high, low, close, period=14):
+    """
+    Williams %R — 超买超卖指标。-100~0，>-20超买，<-80超卖。
+    """
+    n = len(close)
+    if n < period:
+        return -50.0
+
+    highest = float(np.max(high[-period:]))
+    lowest = float(np.min(low[-period:]))
+    if highest == lowest:
+        return -50.0
+    return round(float((highest - close[-1]) / (highest - lowest) * -100), 1)
+
+
+# ---- VWAP (成交量加权平均价) ----
+def calc_vwap(high, low, close, volume):
+    """VWAP — 成交量加权平均价格。"""
+    typical = (high + low + close) / 3
+    total_vol = np.sum(volume)
+    if total_vol == 0:
+        return float(close[-1])
+    return round(float(np.sum(typical * volume) / total_vol), 2)
+
+
+# ---- 综合趋势强度评分 ----
+def calc_trend_strength(close, high, low, volume, period=20):
+    """
+    综合趋势强度 — 多指标融合评分。
+
+    Returns:
+        dict: {'score': float (-1~+1), 'components': dict}
+    """
+    scores = {}
+
+    ma20 = calc_sma(close, 20)
+    ma60 = calc_sma(close, 60)
+    if ma20 and ma60:
+        if close[-1] > ma20 > ma60:
+            scores['ma'] = 0.8
+        elif close[-1] > ma20:
+            scores['ma'] = 0.4
+        elif close[-1] < ma20 < ma60:
+            scores['ma'] = -0.8
+        elif close[-1] < ma20:
+            scores['ma'] = -0.4
+        else:
+            scores['ma'] = 0
+
+    rsi = calc_rsi(close, 14)
+    if rsi is not None:
+        scores['rsi'] = 0.5 if rsi > 60 else (-0.5 if rsi < 40 else 0)
+
+    vol_ratio = calc_volume_ratio(volume, 20)
+    if vol_ratio is not None:
+        if vol_ratio > 1.3 and close[-1] > close[-2]:
+            scores['volume'] = 0.3
+        elif vol_ratio > 1.3 and close[-1] < close[-2]:
+            scores['volume'] = -0.3
+        else:
+            scores['volume'] = 0
+
+    adx_data = calc_adx(high, low, close)
+    if adx_data['is_trending']:
+        direction_mult = 1 if adx_data['direction'] == 'up' else -1
+        scores['adx'] = direction_mult * min(0.5, adx_data['adx'] / 100)
+    else:
+        scores['adx'] = 0
+
+    total = max(-1.0, min(1.0, sum(scores.values())))
+    return {'score': round(total, 3), 'components': scores}

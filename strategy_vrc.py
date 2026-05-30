@@ -25,13 +25,13 @@ import indicators
 
 
 VRC_PERIOD       = 20     # 回看窗口
-VRC_DECLINE_MIN  = -0.08  # V29.8: 8%回调触发
-VRC_VOL_SURGE    = 1.4    # V29.8: 1.4倍量
-VRC_STOP_LOSS    = 0.06   # V30.1: 4%→6%, 防止误杀非VRC持仓
+VRC_DECLINE_MIN  = -0.06  # V33: 8%→6%, 放宽跌幅要求增加信号
+VRC_VOL_SURGE    = 1.2    # V33: 1.4→1.2, 降低量能门槛
+VRC_STOP_LOSS    = 0.06   # 固定止损 6%
 VRC_TIME_STOP    = 10     # 时间止损天数
 VRC_TAKE_PROFIT  = 0.08   # 止盈 8%
 VRC_TRAIL_PROFIT = 0.05   # 移动止盈线
-VRC_SCORE_MIN    = 0.55   # 评分门槛
+VRC_SCORE_MIN    = 0.45   # V33: 0.55→0.45, 降低评分门槛
 
 
 def get_signal(df, sector=None, sector_momentum=None, regime='range'):
@@ -71,9 +71,12 @@ def get_signal(df, sector=None, sector_momentum=None, regime='range'):
             'reason': 'VRC_跌幅不足(%.1f%%)' % (decline_from_high * 100),
         }
 
-    # ---- Phase 2: 确认抛压衰竭 (近3日量递减) ----
+    # ---- Phase 2: 确认抛压衰竭 (V33: 近3日量递减或近2日量低于均量) ----
     vol_3d = vols[-3:]
     vol_declining = (vol_3d[0] > vol_3d[1] > vol_3d[2])
+    vol_20d_avg = np.mean(vols[-20:])
+    vol_below_avg = (vols[-1] < vol_20d_avg * 0.8)  # V33: 当日量低于均量80%
+    vol_declining = vol_declining or vol_below_avg
     
     if not vol_declining:
         # 还在放量，没跌透
@@ -101,7 +104,7 @@ def get_signal(df, sector=None, sector_momentum=None, regime='range'):
     if rsi is None:
         return None
 
-    rsi_sweet_spot = (18 <= rsi <= 45)
+    rsi_sweet_spot = (15 <= rsi <= 50)  # V33: 18-45->15-50
 
     # ---- 加分项 ----
     # 价格离近期低点不远（没反弹太多）

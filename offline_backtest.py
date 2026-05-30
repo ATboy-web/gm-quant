@@ -100,8 +100,26 @@ class V19BacktestEngine:
             print('[Risk] 风控模块加载失败: %s' % e)
             self.risk_manager = None
 
+        self.bar_dates = []
         if MARKET_INDEX in data:
-            self.bar_dates = list(data[MARKET_INDEX]['bob'].dt.strftime('%Y-%m-%d'))
+            df_idx = data[MARKET_INDEX]
+            if 'bob' in df_idx.columns:
+                try:
+                    self.bar_dates = sorted(set(
+                        d.strftime('%Y-%m-%d') for d in pd.to_datetime(df_idx['bob'])
+                    ))
+                except Exception:
+                    if 'date' in df_idx.columns:
+                        self.bar_dates = sorted(df_idx['date'].unique().tolist())
+            elif 'date' in df_idx.columns:
+                self.bar_dates = sorted(df_idx['date'].unique().tolist())
+
+        if not self.bar_dates:
+            # Fallback: 从任意股票获取日期
+            for sym, df in data.items():
+                if 'date' in df.columns:
+                    self.bar_dates = sorted(df['date'].unique().tolist())
+                    break
 
         print('[引擎] 交易日数: %d | 初始资金: %.0f'
               % (len(self.bar_dates), start_cash))

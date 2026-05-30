@@ -353,7 +353,7 @@ class TradeExecutor:
     # ==================================================================
 
     def calc_position_size(self, candidate, available_cash, remaining_slots):
-        """根据行业配置计算买入数量。"""
+        """根据行业配置计算买入数量。V33: 移除remaining_slots除法，提高资金利用率。"""
         sector = candidate['sector']
         price = candidate['price']
         sector_cfg = sector_config.get_sector_config(sector)
@@ -361,7 +361,9 @@ class TradeExecutor:
         base_pct = sector_cfg.get('position_pct', config.POSITION_PCT)
         pos_pct = base_pct * candidate['position_pct']
 
-        allocated = available_cash * pos_pct / max(remaining_slots, 1)
+        # V33: 直接按比例分配，不再除以remaining_slots
+        allocated = available_cash * pos_pct
+
         if allocated < price * 100:
             return 0
 
